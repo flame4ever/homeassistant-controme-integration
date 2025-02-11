@@ -1,0 +1,8 @@
+{
+    "domain": "controme",
+    "name": "Controme",
+    "version": "1.0",
+    "requirements": ["requests"],
+    "dependencies": [],
+    "codeowners": ["@flame4ever"]
+  }

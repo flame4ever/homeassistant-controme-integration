@@ -1,0 +1,10 @@
+{
+    "name": "Controme",
+    "content_in_root": false,
+    "domains": ["sensor"],
+    "country": "DE",
+    "homeassistant": "2021.1.5",
+    "render_readme": true,
+    "zip_release": false,
+    "filename": "custom_components/controme"
+  }

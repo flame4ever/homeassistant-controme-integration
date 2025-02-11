@@ -1,0 +1,18 @@
+{
+    "config": {
+      "step": {
+        "user": {
+          "title": "Controme Configuration",
+          "data": {
+            "api_url": "API URL",
+            "haus_id": "Haus ID",
+            "user": "User",
+            "password": "Password"
+          }
+        }
+      },
+      "error": {
+        "already_configured": "This API URL is already configured."
+      }
+    }
+  }
