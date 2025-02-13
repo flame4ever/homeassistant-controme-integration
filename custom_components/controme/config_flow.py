@@ -28,15 +28,11 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not user_input[CONF_API_URL].startswith(("http://", "https://")):
                 errors[CONF_API_URL] = "invalid_url_format"
             else:
-                # Eingaben speichern
                 self._user_input = user_input.copy()
-
-                # Versuche, die verfügbaren Haus-IDs über die API abzurufen
                 houses = await self._fetch_house_ids(user_input)
                 if not houses:
                     errors["base"] = "cannot_connect"
                 elif len(houses) == 1:
-                    # Nur eine Haus-ID gefunden, diese dann automatisch verwenden.
                     haus_id = houses[0].get(CONF_HAUS_ID)
                     self._user_input[CONF_HAUS_ID] = haus_id
                     unique_id = f"{user_input[CONF_API_URL]}_{haus_id}"
@@ -66,9 +62,8 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Step 2: Auswählen der Haus-ID, wenn mehrere vorhanden sind."""
         if user_input is None:
-            # Erstelle Auswahlmöglichkeiten aus der abgerufenen Hausliste.
             house_options = {
-                str(house.get(CONF_HAUS_ID)): f"{house.get('name', 'Haus ' + str(house.get(CONF_HAUS_ID)))}"
+                str(house.get(CONF_HAUS_ID)): house.get("name", f"Haus {house.get(CONF_HAUS_ID)}")
                 for house in self._houses
             }
             return self.async_show_form(
@@ -78,17 +73,15 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }),
                 errors={},
             )
-        else:
-            # Der Benutzer hat eine Haus-ID ausgewählt.
-            haus_id = int(user_input[CONF_HAUS_ID])
-            self._user_input[CONF_HAUS_ID] = haus_id
-            unique_id = f"{self._user_input[CONF_API_URL]}_{haus_id}"
-            await self.async_set_unique_id(unique_id)
-            self._abort_if_unique_id_configured()
-            return self.async_create_entry(
-                title=f"Controme {haus_id}",
-                data=self._user_input,
-            )
+        haus_id = int(user_input[CONF_HAUS_ID])
+        self._user_input[CONF_HAUS_ID] = haus_id
+        unique_id = f"{self._user_input[CONF_API_URL]}_{haus_id}"
+        await self.async_set_unique_id(unique_id)
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(
+            title=f"Controme {haus_id}",
+            data=self._user_input,
+        )
 
     async def _fetch_house_ids(self, config: dict[str, Any]) -> list[dict[str, Any]]:
         """Holt die verfügbaren Haus-IDs von der Controme API.
@@ -109,7 +102,8 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     if response.status != 200:
                         return []
                     data = await response.json()
-                    # Sicherstellen, dass jedes Element einen Schlüssel für die Haus-ID enthält.
+
+                    # Extrahiere gültige Häuser anhand des definierten Schlüssels
                     houses = []
                     for item in data:
                         if CONF_HAUS_ID in item:
@@ -119,4 +113,4 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             houses.append(item)
                     return houses
         except Exception:
-            return [] 
+            return []

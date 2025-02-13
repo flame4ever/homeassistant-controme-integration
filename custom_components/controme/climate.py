@@ -1,5 +1,5 @@
 """Platform for climate integration."""
-from typing import Any
+from typing import Any, Optional
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import HVACMode, ClimateEntityFeature
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
@@ -28,32 +28,38 @@ class ContromeThermostat(ClimateEntity):
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the Controme thermostat."""
         self._config = config
-        self._attr_unique_id = f"controme_{config['haus_id']}"
-        self._attr_name = f"Controme {config['haus_id']}"
-        self._current_temperature: float | None = None
-        self._target_temperature: float | None = None
+        haus_id = config.get('haus_id', 'unknown')
+        self._attr_unique_id = f"controme_{haus_id}"
+        self._attr_name = f"Controme {haus_id}"
+        self._current_temperature: Optional[float] = None
+        self._target_temperature: Optional[float] = None
         self._hvac_mode: HVACMode = HVACMode.OFF
 
     @property
-    def current_temperature(self) -> float | None:
+    def current_temperature(self) -> Optional[float]:
         """Return the current temperature of the thermostat."""
         return self._current_temperature
 
     @property
-    def target_temperature(self) -> float | None:
+    def target_temperature(self) -> Optional[float]:
         """Return the target temperature."""
         return self._target_temperature
+
+    @property
+    def hvac_mode(self) -> HVACMode:
+        """Return the current HVAC mode."""
+        return self._hvac_mode
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is not None:
-            # Hier können Sie die API ansprechen, um die Temperatur zu ändern.
+            # Hier kann die API angesprochen werden, um die Temperatur zu ändern.
             self._target_temperature = temperature
             self.async_write_ha_state()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new HVAC mode."""
-        # Hier können Sie die API ansprechen, um den Modus zu ändern.
+        # Hier kann die API angesprochen werden, um den Modus zu ändern.
         self._hvac_mode = hvac_mode
-        self.async_write_ha_state() 
+        self.async_write_ha_state()
