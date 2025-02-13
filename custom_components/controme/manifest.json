@@ -1,13 +1,12 @@
 {
   "domain": "controme",
   "name": "Controme",
-  "codeowners": [
-    "@flame4ever"
-  ],
+  "codeowners": ["@flame4ever"],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/flame4ever/homeassistant-controme-integration",
-  "iot_class": "cloud_polling",
-  "requirements": [],
-  "version": "1.0.0"
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/flame4ever/homeassistant-controme-integration/issues",
+  "loggers": ["aioeeve_controme"],
+  "version": "0.1.0"
 } 
