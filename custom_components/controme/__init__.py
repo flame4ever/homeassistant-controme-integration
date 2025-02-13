@@ -6,7 +6,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
 # Da diese Integration ausschließlich über config entries eingerichtet wird,
-# verwenden wir das passende leere Schema:
+# verwenden wir das passende leere Schema.
 CONFIG_SCHEMA = cv.config_entry_only_config_schema
 
 from .const import DOMAIN, PLATFORMS

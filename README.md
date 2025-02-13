@@ -29,7 +29,7 @@ This custom integration allows you to interact with the Controme API to control 
 1. **Clone or Download the Repository:**
 
    ```bash
-   git clone https://github.com/yourusername/homeassistant-controme-integration.git
+   git clone https://github.com/flame4ever/homeassistant-controme-integration.git
    ```
 
 2. **Copy to Custom Components Folder:**
