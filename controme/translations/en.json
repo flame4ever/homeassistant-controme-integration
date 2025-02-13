@@ -3,18 +3,24 @@
         "step": {
             "user": {
                 "title": "Connect to Controme",
-                "description": "Set up your Controme integration",
+                "description": "Enter API URL, username, and password.",
                 "data": {
                     "api_url": "API URL (must start with http:// or https://)",
-                    "haus_id": "House ID",
                     "user": "Username",
                     "password": "Password"
+                }
+            },
+            "select_house": {
+                "title": "Select House",
+                "description": "Multiple houses found. Please select one:",
+                "data": {
+                    "haus_id": "House ID"
                 }
             }
         },
         "error": {
             "invalid_url_format": "URL must start with http:// or https://",
-            "cannot_connect": "Failed to connect",
+            "cannot_connect": "Failed to connect to the API or no houses found",
             "invalid_auth": "Invalid authentication",
             "unknown": "Unexpected error"
         },
