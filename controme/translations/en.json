@@ -1,18 +1,25 @@
 {
     "config": {
-      "step": {
-        "user": {
-          "title": "Controme Configuration",
-          "data": {
-            "api_url": "API URL",
-            "haus_id": "Haus ID",
-            "user": "User",
-            "password": "Password"
-          }
+        "step": {
+            "user": {
+                "title": "Connect to Controme",
+                "description": "Set up your Controme integration",
+                "data": {
+                    "api_url": "API URL (must start with http:// or https://)",
+                    "haus_id": "House ID",
+                    "user": "Username",
+                    "password": "Password"
+                }
+            }
+        },
+        "error": {
+            "invalid_url_format": "URL must start with http:// or https://",
+            "cannot_connect": "Failed to connect",
+            "invalid_auth": "Invalid authentication",
+            "unknown": "Unexpected error"
+        },
+        "abort": {
+            "already_configured": "Device is already configured"
         }
-      },
-      "error": {
-        "already_configured": "This API URL is already configured."
-      }
     }
-  }
+} 
