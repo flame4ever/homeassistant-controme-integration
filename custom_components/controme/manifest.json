@@ -1,0 +1,13 @@
+{
+  "domain": "controme",
+  "name": "Controme",
+  "codeowners": [
+    "@flame4ever"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/flame4ever/homeassistant-controme-integration/blob/main/README.md",
+  "iot_class": "cloud_polling",
+  "requirements": [],
+  "version": "1.0.0"
+} 
