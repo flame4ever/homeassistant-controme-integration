@@ -2,7 +2,7 @@
   "domain": "controme",
   "name": "Controme",
   "config_flow": true,
-  "documentation": "https://www.home-assistant.io/integrations/controme",
+  "documentation": "https://github.com/flame4ever/homeassistant-controme-integration",
   "requirements": ["aiohttp>=3.8.0"],
   "dependencies": [],
   "codeowners": ["@flame4ever"],
