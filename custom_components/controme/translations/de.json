@@ -37,7 +37,7 @@
             "operation_mode": {
                 "name": "Betriebsart",
                 "state": {
-                    "Heating": "Heizen"
+                    "heating": "Heizen"
                 }
             },
             "return": {
