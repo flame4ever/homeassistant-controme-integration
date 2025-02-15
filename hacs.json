@@ -1,7 +1,7 @@
 {
     "name": "Controme",
     "content_in_root": false,
-    "domains": ["sensor"],
+    "domains": ["climate"],
     "country": "DE",
     "homeassistant": "2021.1.5",
     "render_readme": true,
