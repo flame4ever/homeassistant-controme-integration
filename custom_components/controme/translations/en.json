@@ -3,9 +3,9 @@
         "step": {
             "user": {
                 "title": "Connect to Controme",
-                "description": "Enter API URL, username, and password.",
+                "description": "Set up your Controme integration",
                 "data": {
-                    "api_url": "API URL (must start with http:// or https://)",
+                    "api_url": "API URL or IP address",
                     "user": "Username",
                     "password": "Password"
                 }
@@ -19,13 +19,54 @@
             }
         },
         "error": {
-            "invalid_url_format": "URL must start with http:// or https://",
-            "cannot_connect": "Failed to connect to the API or no houses found",
+            "cannot_connect": "Failed to connect",
             "invalid_auth": "Invalid authentication",
             "unknown": "Unexpected error"
         },
         "abort": {
             "already_configured": "Device is already configured"
+        }
+    },
+    "entity": {
+        "sensor": {
+            "current": {
+                "name": "Temperature"
+            },
+            "target": {
+                "name": "Target Temperature"
+            },
+            "humidity": {
+                "name": "Humidity"
+            },
+            "total_offset": {
+                "name": "Total Offset"
+            },
+            "operation_mode": {
+                "name": "Operation Mode",
+                "state": {
+                    "Heating": "Heating"
+                }
+            },
+            "return": {
+                "state": {
+                    "name": "Return {description}"
+                }
+            }
+        },
+        "climate": {
+            "controme": {
+                "name": "Heating",
+                "state_attributes": {
+                    "preset_mode": {
+                        "name": "Preset",
+                        "state": {
+                            "heating": "Heating",
+                            "eco": "Eco",
+                            "comfort": "Comfort"
+                        }
+                    }
+                }
+            }
         }
     }
 } 

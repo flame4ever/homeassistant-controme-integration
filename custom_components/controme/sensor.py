@@ -1,30 +1,31 @@
-"""Platform for Controme sensor integration.
-
-Diese Plattform ruft die API ab (basierend auf der konfigurierten Haus-ID) und importiert
-die Räume als Geräte. Für jeden Raum werden separate Sensoren (z. B. aktuelle Temperatur 
-und Solltemperatur) als Entitäten in dem zugehörigen Gerät erstellt.
-"""
-
+"""Support for Controme sensors."""
 import logging
-import aiohttp
+from typing import Any
+from datetime import timedelta
 
-from homeassistant.components.sensor import SensorEntity
-from homeassistant.const import UnitOfTemperature
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass,
+)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import (
+    UnitOfTemperature,
+    PERCENTAGE,
+)
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID
+from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, KEY_TEMPERATURE, KEY_TARGET_TEMPERATURE, KEY_HUMIDITY, KEY_TOTAL_OFFSET, KEY_OPERATION_MODE, KEY_RETURN
 
 _LOGGER = logging.getLogger(__name__)
+SCAN_INTERVAL = timedelta(seconds=60)
 
-
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     """Set up the Controme sensor platform."""
     sensors = []
-    base_url = entry.data.get(CONF_API_URL).strip()
-    if not (base_url.startswith("http://") or base_url.startswith("https://")):
-        base_url = f"http://{base_url}"
-    base_url = base_url.rstrip("/")
+    base_url = entry.data.get(CONF_API_URL)
     house_id = entry.data.get(CONF_HAUS_ID)
 
     endpoint = f"{base_url}/get/json/v1/{house_id}/temps/"
@@ -39,89 +40,197 @@ async def async_setup_entry(hass, entry, async_add_entities):
         _LOGGER.exception("Exception during fetching sensor data: %s", ex)
         return
 
-    # Durchlaufe alle Etagen (floors) und sammle die Räume (raeume)
+    # Process all floors and rooms
     for floor in data:
         floor_id = floor.get("id")
         floor_name = floor.get("etagenname", f"Floor {floor_id}")
         rooms = floor.get("raeume", [])
-        # Falls keine Räume unter "raeume" vorhanden sind, aber direkt Sensorwerte geliefert werden,
-        # dann wird angenommen, dass der Floor-Eintrag selbst die Raumdaten enthält.
+        
         if not rooms and ("temperatur" in floor or "solltemperatur" in floor):
-            _LOGGER.debug("No 'raeume' found for floor %s, assuming floor is a room", floor_id)
             rooms = [floor]
-        for index, room in enumerate(rooms):
+            
+        for room in rooms:
             room_id = room.get("id")
             if not room_id:
                 room_id = f"{floor_id}_{index}"
-            # Verwende den im Raum definierten Namen oder einen generischen Namen
             room_name = room.get("name", f"Room {room_id}")
 
-            # Erstelle device_info für den Raum (wird als Gerät in HA angezeigt)
+            # Base device info for the room
             device_info = DeviceInfo(
-                identifiers={(DOMAIN, f"{house_id}_{room_id}")},
+                identifiers={(DOMAIN, f"{house_id}_{floor_id}_{room_id}")},
                 name=room_name,
                 manufacturer="Controme",
-                model="Room Sensor",
+                model="Room Controller",
+                via_device=(DOMAIN, f"{house_id}"),
             )
 
-            # Erstelle Sensor-Entitäten. Zusätzlich werden die kompletten Raumdaten (room_data) übergeben.
-            if room.get("temperatur") is not None:
+            # Create sensors for each available value
+            if "temperatur" in room:
                 sensors.append(
-                    ContromeRoomSensor(
-                        base_url=base_url,
-                        house_id=house_id,
-                        floor_id=floor_id,
-                        room_id=room_id,
-                        room_name=room_name,
-                        sensor_type="current",
-                        initial_value=room.get("temperatur"),
-                        device_info=device_info,
-                        room_data=room,
+                    ContromeSensor(
+                        base_url,
+                        house_id,
+                        floor_id,
+                        room_id,
+                        room_name,
+                        "current",
+                        device_info,
+                        room,
                     )
                 )
-            if room.get("solltemperatur") is not None:
+
+            if "solltemperatur" in room:
                 sensors.append(
-                    ContromeRoomSensor(
-                        base_url=base_url,
-                        house_id=house_id,
-                        floor_id=floor_id,
-                        room_id=room_id,
-                        room_name=room_name,
-                        sensor_type="target",
-                        initial_value=room.get("solltemperatur"),
-                        device_info=device_info,
-                        room_data=room,
+                    ContromeSensor(
+                        base_url,
+                        house_id,
+                        floor_id,
+                        room_id,
+                        room_name,
+                        "target",
+                        device_info,
+                        room,
                     )
                 )
+
+            if "luftfeuchte" in room:
+                sensors.append(
+                    ContromeSensor(
+                        base_url,
+                        house_id,
+                        floor_id,
+                        room_id,
+                        room_name,
+                        "humidity",
+                        device_info,
+                        room,
+                    )
+                )
+
+            # Add sensors for all return temperatures
+            for sensor in room.get("sensoren", []):
+                if "Rücklauf" in sensor.get("beschreibung", ""):
+                    sensor_id = sensor.get("name")
+                    sensors.append(
+                        ContromeSensor(
+                            base_url,
+                            house_id,
+                            floor_id,
+                            room_id,
+                            room_name,
+                            f"return_{sensor_id}",
+                            device_info,
+                            room,
+                            sensor.get("beschreibung"),
+                        )
+                    )
+
+            # Add total offset
+            if "total_offset" in room:
+                sensors.append(
+                    ContromeSensor(
+                        base_url,
+                        house_id,
+                        floor_id,
+                        room_id,
+                        room_name,
+                        "total_offset",
+                        device_info,
+                        room,
+                    )
+                )
+
+            # Add operation mode
+            if "betriebsart" in room:
+                sensors.append(
+                    ContromeSensor(
+                        base_url,
+                        house_id,
+                        floor_id,
+                        room_id,
+                        room_name,
+                        "operation_mode",
+                        device_info,
+                        room,
+                    )
+                )
+
     async_add_entities(sensors)
 
+class ContromeSensor(SensorEntity):
+    """Representation of a Controme Sensor."""
 
-class ContromeRoomSensor(SensorEntity):
-    """Representation of a sensor in a Controme room."""
+    _attr_has_entity_name = True
 
-    def __init__(self, base_url, house_id, floor_id, room_id, room_name, sensor_type, initial_value, device_info, room_data):
+    def __init__(
+        self,
+        base_url: str,
+        house_id: str,
+        floor_id: str,
+        room_id: str,
+        room_name: str,
+        sensor_type: str,
+        device_info: DeviceInfo,
+        room_data: dict,
+        description: str = None,
+    ):
         """Initialize the sensor."""
         self._base_url = base_url
         self._house_id = house_id
         self._floor_id = floor_id
         self._room_id = room_id
-        self._room_name = room_name
-        self._sensor_type = sensor_type  # "current" oder "target"
-        self._state = initial_value
+        self._sensor_type = sensor_type
         self._device_info = device_info
         self._room_data = room_data
-
-        self._attr_unique_id = f"{DOMAIN}_{house_id}_{room_id}_{sensor_type}"
+        self._attr_unique_id = f"{house_id}_{floor_id}_{room_id}_{sensor_type}"
+        
+        # Set names and attributes based on sensor type
         if sensor_type == "current":
-            self._attr_name = f"{room_name} Temperature"
-        else:
-            self._attr_name = f"{room_name} Target Temperature"
-        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-
-    @property
-    def state(self):
-        """Return the state of the sensor."""
-        return self._state
+            self._attr_name = KEY_TEMPERATURE
+            self._attr_translation_key = "current"
+            self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+            self._attr_device_class = SensorDeviceClass.TEMPERATURE
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+            self._attr_native_value = room_data.get("temperatur")
+        elif sensor_type == "target":
+            self._attr_name = KEY_TARGET_TEMPERATURE
+            self._attr_translation_key = "target"
+            self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+            self._attr_device_class = SensorDeviceClass.TEMPERATURE
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+            self._attr_native_value = room_data.get("solltemperatur")
+        elif sensor_type == "humidity":
+            self._attr_name = KEY_HUMIDITY
+            self._attr_translation_key = "humidity"
+            self._attr_native_unit_of_measurement = PERCENTAGE
+            self._attr_device_class = SensorDeviceClass.HUMIDITY
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+            self._attr_native_value = room_data.get("luftfeuchte")
+        elif sensor_type.startswith("return_"):
+            room_description = description.split(" ")[-1] if description else ""
+            self._attr_translation_key = KEY_RETURN
+            self._attr_translation_placeholders = {"description": room_description}
+            self._attr_has_entity_name = True
+            self._attr_name = f"Return {room_description}"  # Fallback name if translation fails
+            self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+            self._attr_device_class = SensorDeviceClass.TEMPERATURE
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+            # Find the corresponding sensor in sensor data
+            for sensor in room_data.get("sensoren", []):
+                if sensor.get("name") in sensor_type:
+                    self._attr_native_value = sensor.get("wert")
+                    break
+        elif sensor_type == "total_offset":
+            self._attr_name = KEY_TOTAL_OFFSET
+            self._attr_translation_key = "total_offset"
+            self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+            self._attr_device_class = SensorDeviceClass.TEMPERATURE
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+            self._attr_native_value = room_data.get("total_offset")
+        elif sensor_type == "operation_mode":
+            self._attr_name = KEY_OPERATION_MODE
+            self._attr_translation_key = "operation_mode"
+            self._attr_native_value = room_data.get("betriebsart")
 
     @property
     def device_info(self):
@@ -130,37 +239,50 @@ class ContromeRoomSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        """Return the full room data as state attributes."""
-        return self._room_data
+        """Return the state attributes."""
+        return {
+            "room_id": self._room_id,
+            "floor_id": self._floor_id,
+            "house_id": self._house_id,
+        }
 
     async def async_update(self):
-        """Update sensor state from the API."""
+        """Update sensor state."""
         session = async_get_clientsession(self.hass)
         endpoint = f"{self._base_url}/get/json/v1/{self._house_id}/temps/"
         try:
             async with session.get(endpoint) as response:
                 if response.status != 200:
-                    _LOGGER.error("Error updating sensors for house %s, status: %s", self._house_id, response.status)
+                    _LOGGER.error("Error updating sensors for house %s, status: %s", 
+                                self._house_id, response.status)
                     return
                 data = await response.json()
         except Exception as ex:
             _LOGGER.exception("Exception updating sensor data: %s", ex)
             return
 
-        # Finde die Etage, die zu diesem Sensor gehört, und aktualisiere den entsprechenden Raumwert.
+        # Find the corresponding room and update values
         for floor in data:
             if floor.get("id") == self._floor_id:
                 rooms = floor.get("raeume", [])
-                # Falls keine Räume unter "raeume" vorhanden sind, wird angenommen, dass der Floor selbst die Raumdaten enthält.
                 if not rooms and ("temperatur" in floor or "solltemperatur" in floor):
                     rooms = [floor]
                 for room in rooms:
                     if room.get("id") == self._room_id:
-                        # Update der kompletten Raumdaten.
                         self._room_data = room
-                        if self._sensor_type == "current" and room.get("temperatur") is not None:
-                            self._state = room.get("temperatur")
-                        elif self._sensor_type == "target" and room.get("solltemperatur") is not None:
-                            self._state = room.get("solltemperatur")
+                        if self._sensor_type == "current":
+                            self._attr_native_value = room.get("temperatur")
+                        elif self._sensor_type == "target":
+                            self._attr_native_value = room.get("solltemperatur")
+                        elif self._sensor_type == "humidity":
+                            self._attr_native_value = room.get("luftfeuchte")
+                        elif self._sensor_type.startswith("return_"):
+                            for sensor in room.get("sensoren", []):
+                                if sensor.get("name") in self._sensor_type:
+                                    self._attr_native_value = sensor.get("wert")
+                                    break
+                        elif self._sensor_type == "total_offset":
+                            self._attr_native_value = room.get("total_offset")
+                        elif self._sensor_type == "operation_mode":
+                            self._attr_native_value = room.get("betriebsart")
                         return
-        _LOGGER.warning("Room %s not found during sensor update", self._room_id)

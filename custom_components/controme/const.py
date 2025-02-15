@@ -3,13 +3,21 @@
 from typing import Final
 from homeassistant.const import Platform
 
-# Domain der Integration
+# Integration domain
 DOMAIN: Final = "controme"
 
-# Konfigurationsschlüssel, die in der Webkonfiguration abgefragt werden
+# Configuration keys used in the web configuration
 CONF_API_URL: Final = "api_url"
 CONF_HAUS_ID: Final = "haus_id"
 CONF_USER: Final = "user"
 CONF_PASSWORD: Final = "password"
 
-# Plattformen werden jetzt in __init__.py definiert
+# Platforms are now defined in __init__.py
+
+# Translation keys
+KEY_TEMPERATURE = "Temperature"
+KEY_TARGET_TEMPERATURE = "Target Temperature"
+KEY_HUMIDITY = "Humidity"
+KEY_TOTAL_OFFSET = "Total Offset"
+KEY_OPERATION_MODE = "Operation Mode"
+KEY_RETURN = "return"  # Used for return temperature sensors

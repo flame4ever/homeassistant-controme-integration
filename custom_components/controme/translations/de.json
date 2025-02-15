@@ -1,0 +1,65 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Mit Controme verbinden",
+                "description": "Richte deine Controme-Integration ein",
+                "data": {
+                    "api_url": "API URL oder IP-Adresse",
+                    "user": "Benutzername",
+                    "password": "Passwort"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Verbindung fehlgeschlagen",
+            "invalid_auth": "Ungültige Authentifizierung",
+            "unknown": "Unerwarteter Fehler"
+        },
+        "abort": {
+            "already_configured": "Gerät ist bereits konfiguriert"
+        }
+    },
+    "entity": {
+        "sensor": {
+            "current": {
+                "name": "Temperatur"
+            },
+            "target": {
+                "name": "Zieltemperatur"
+            },
+            "humidity": {
+                "name": "Luftfeuchtigkeit"
+            },
+            "total_offset": {
+                "name": "Gesamtabweichung"
+            },
+            "operation_mode": {
+                "name": "Betriebsart",
+                "state": {
+                    "Heating": "Heizen"
+                }
+            },
+            "return": {
+                "state": {
+                    "name": "Rücklauf {description}"
+                }
+            }
+        },
+        "climate": {
+            "controme": {
+                "name": "Heizung",
+                "state_attributes": {
+                    "preset_mode": {
+                        "name": "Voreinstellung",
+                        "state": {
+                            "heating": "Heizen",
+                            "eco": "Eco",
+                            "comfort": "Komfort"
+                        }
+                    }
+                }
+            }
+        }
+    }
+} 
