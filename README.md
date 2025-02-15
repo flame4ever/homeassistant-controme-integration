@@ -1,75 +1,78 @@
 # Controme Integration for Home Assistant
 
-This custom integration allows you to interact with the Controme API to control and monitor climate functionality (e.g., thermostats) for your houses. It dynamically retrieves available house IDs and lets you select one during setup. If only a single house is returned by the API, it will be automatically selected.
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![GitHub Release][releases-shield]][releases]
+[![License][license-shield]](LICENSE)
+
+Home Assistant integration for Controme heating systems. This integration allows you to control and monitor your Controme heating system through Home Assistant.
 
 ## Features
 
-- **Dynamic Configuration:**  
-  Enter the API URL, username, and password via the Home Assistant UI. The integration fetches available house IDs from the API.
-
-- **House Selection:**  
-  If the API returns multiple house IDs, you will be prompted to choose one. When only one house is found, it is automatically selected.
-
-- **Climate Platform:**  
-  Provides a sample climate (thermostat) entity. Customize the climate functionality in `climate.py` as needed.
-
-- **UI-Driven Setup:**  
-  No need to modify your `configuration.yaml` manually. The integration supports the Home Assistant Config Flow and is fully configurable from the UI.
+- Temperature control for each room
+- Current temperature monitoring
+- Humidity monitoring
+- Return temperature sensors
+- Total offset display
+- Operation mode status
+- Automatic updates every 60 seconds
 
 ## Installation
 
-### Prerequisites
+### HACS (Recommended)
+1. Add this repository to HACS as a custom repository
+2. Install the "Controme" integration
+3. Restart Home Assistant
 
-- Home Assistant version 0.105 or later.
-- Python 3.9 or later.
-- A running instance of the Controme API with valid credentials.
+### Manual Installation
+1. Copy the `custom_components/controme` folder to your Home Assistant's `custom_components` directory
+2. Restart Home Assistant
 
-### Steps
+## Configuration
 
-1. **Clone or Download the Repository:**
+1. Go to Settings -> Devices & Services
+2. Click "Add Integration"
+3. Search for "Controme"
+4. Enter your Controme API details:
+   - API URL (e.g., http://192.168.1.100/)
+   - Username
+   - Password
 
-   ```bash
-   git clone https://github.com/flame4ever/homeassistant-controme-integration.git
-   ```
+## Entities Created
 
-2. **Copy to Custom Components Folder:**
+For each room, the integration creates:
 
-   Place the contents of the repository into the following folder in your Home Assistant configuration:
-   
-   ```
-   /config/custom_components/controme/
-   ```
+### Climate Entity
+- Controls room temperature
+- Shows current and target temperature
+- Shows current humidity
+- Supports heating mode
 
-   The folder structure should look like this:
-   
-   ```
-   custom_components/controme/
-   ├── __init__.py
-   ├── manifest.json
-   ├── config_flow.py
-   ├── const.py
-   ├── climate.py
-   └── translations/
-       └── en.json
-   ```
+### Sensors
+- Current Temperature
+- Target Temperature
+- Humidity
+- Return Temperature (if available)
+- Total Offset
+- Operation Mode
 
-3. **Restart Home Assistant.**
+## Supported Languages
+- English
+- German (Deutsch)
 
-## Configuration via the Home Assistant UI
+## Requirements
+- Home Assistant 2024.1.0 or newer
+- Controme heating system with API access
 
-Once installed, configure the integration by following these steps:
+## Support
 
-1. Navigate to **Configuration > Devices & Services > Add Integration**.
-2. Search for **Controme** and select it.
-3. Enter your API credentials:
-   - **API URL:** e.g. `http://192.168.x.x` (must start with `http://` or `https://`)
-   - **Username:** Your API username.
-   - **Password:** Your API password.
-4. The integration will automatically fetch available house IDs from your API endpoint (`{api_url}/houses`).
-   - If multiple house IDs are found, you will be prompted to select one.
-   - If only one house ID is returned, it will be selected automatically.
-5. Complete the flow to create the integration entry.
+If you have any issues or feature requests, please:
+1. Check the [Issues](https://github.com/flame4ever/homeassistant-controme-integration/issues) page
+2. Create a new issue if your problem isn't already listed
 
-### Using configuration.yaml (Fallback)
+## License
 
-If needed, you can also configure the integration via `configuration.yaml`:
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+[releases-shield]: https://img.shields.io/github/release/flame4ever/homeassistant-controme-integration.svg
+[releases]: https://github.com/flame4ever/homeassistant-controme-integration/releases
+[license-shield]: https://img.shields.io/github/license/flame4ever/homeassistant-controme-integration.svg
