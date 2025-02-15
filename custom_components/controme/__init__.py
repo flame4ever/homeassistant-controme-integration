@@ -26,8 +26,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, entry.data[CONF_HAUS_ID])},
         manufacturer="Controme",
-        name=f"Controme House {entry.data[CONF_HAUS_ID]}",
-        model="Controme Hub",
+        name=f"Controme Home {entry.data[CONF_HAUS_ID]}",
+        model="Thermostat API",
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

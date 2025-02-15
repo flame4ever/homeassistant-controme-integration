@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_TEMPERATURE,
     UnitOfTemperature,
+    PERCENTAGE,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
@@ -21,6 +22,7 @@ from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=60)
+ATTR_HUMIDITY = "current_humidity"
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     """Set up the Controme climate platform."""
@@ -61,7 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 identifiers={(DOMAIN, f"{house_id}_{floor_id}_{room_id}")},
                 name=room_name,
                 manufacturer="Controme",
-                model="Room Controller",
+                model="Thermostat API",
                 via_device=(DOMAIN, f"{house_id}"),
             )
 
@@ -115,11 +117,19 @@ class ContromeClimate(ClimateEntity):
         self._attr_current_temperature = room_data.get("temperatur")
         self._attr_target_temperature = room_data.get("solltemperatur")
         self._attr_hvac_mode = HVACMode.HEAT if room_data.get("betriebsart") == "Heating" else None
+        self._attr_current_humidity = room_data.get("luftfeuchte")
 
     @property
     def device_info(self):
         """Return device info."""
         return self._device_info
+
+    @property
+    def extra_state_attributes(self):
+        """Return the optional state attributes."""
+        return {
+            ATTR_HUMIDITY: self._attr_current_humidity
+        }
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
@@ -194,4 +204,5 @@ class ContromeClimate(ClimateEntity):
                         self._attr_current_temperature = room.get("temperatur")
                         self._attr_target_temperature = room.get("solltemperatur")
                         self._attr_hvac_mode = HVACMode.HEAT if room.get("betriebsart") == "Heating" else None
+                        self._attr_current_humidity = room.get("luftfeuchte")
                         return

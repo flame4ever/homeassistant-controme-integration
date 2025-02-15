@@ -60,7 +60,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 identifiers={(DOMAIN, f"{house_id}_{floor_id}_{room_id}")},
                 name=room_name,
                 manufacturer="Controme",
-                model="Room Controller",
+                model="Thermostat API",
                 via_device=(DOMAIN, f"{house_id}"),
             )
 

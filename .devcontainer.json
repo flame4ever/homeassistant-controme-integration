@@ -1,5 +1,5 @@
 {
-    "name": "flame4ever/controme",
+    "name": "flame4ever/homeassistant-controme-integration",
     "image": "mcr.microsoft.com/devcontainers/python:3.12",
     "postCreateCommand": "scripts/setup",
     "forwardPorts": [
