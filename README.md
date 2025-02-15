@@ -4,6 +4,8 @@
 [![GitHub Release][releases-shield]][releases]
 [![License][license-shield]](LICENSE)
 
+![Integration Example](https://github.com/flame4ever/homeassistant-controme-integration/blob/main/Example.png)
+
 Home Assistant integration for Controme heating systems. This integration allows you to control and monitor your Controme heating system through Home Assistant.
 
 ## Features
