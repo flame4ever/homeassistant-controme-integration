@@ -86,7 +86,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 class ContromeClimate(ClimateEntity):
     """Representation of a Controme Climate device."""
 
-    _attr_has_entity_name = True
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_modes = [HVACMode.HEAT]
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
@@ -113,6 +112,7 @@ class ContromeClimate(ClimateEntity):
         self._user = user
         self._password = password
         self._attr_unique_id = f"{house_id}_{floor_id}_{room_id}_climate"
+        self.entity_id = f"climate.controme_{room_name.lower()}"
         self._attr_name = room_name
         self._attr_current_temperature = room_data.get("temperatur")
         self._attr_target_temperature = room_data.get("solltemperatur")

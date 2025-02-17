@@ -183,24 +183,28 @@ class ContromeSensor(SensorEntity):
         self._device_info = device_info
         self._room_data = room_data
         self._attr_unique_id = f"{house_id}_{floor_id}_{room_id}_{sensor_type}"
+        room_name_lower = room_name.lower()
         
         # Set names and attributes based on sensor type
         if sensor_type == "current":
-            self._attr_name = KEY_TEMPERATURE
+            self._attr_name = "Temperature"
+            self.entity_id = f"sensor.controme_{room_name_lower}_temperature"
             self._attr_translation_key = "current"
             self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
             self._attr_device_class = SensorDeviceClass.TEMPERATURE
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_value = room_data.get("temperatur")
         elif sensor_type == "target":
-            self._attr_name = KEY_TARGET_TEMPERATURE
+            self._attr_name = "Target"
+            self.entity_id = f"sensor.controme_{room_name_lower}_target"
             self._attr_translation_key = "target"
             self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
             self._attr_device_class = SensorDeviceClass.TEMPERATURE
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_value = room_data.get("solltemperatur")
         elif sensor_type == "humidity":
-            self._attr_name = KEY_HUMIDITY
+            self._attr_name = "Humidity"
+            self.entity_id = f"sensor.controme_{room_name_lower}_humidity"
             self._attr_translation_key = "humidity"
             self._attr_native_unit_of_measurement = PERCENTAGE
             self._attr_device_class = SensorDeviceClass.HUMIDITY
@@ -208,10 +212,8 @@ class ContromeSensor(SensorEntity):
             self._attr_native_value = room_data.get("luftfeuchte")
         elif sensor_type.startswith("return_"):
             room_description = description.split(" ")[-1] if description else ""
-            self._attr_translation_key = KEY_RETURN
-            self._attr_translation_placeholders = {"description": room_description}
-            self._attr_has_entity_name = True
-            self._attr_name = f"Return {room_description}"  # Fallback name if translation fails
+            self._attr_name = "Return"
+            self.entity_id = f"sensor.controme_{room_name_lower}_return"
             self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
             self._attr_device_class = SensorDeviceClass.TEMPERATURE
             self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -221,14 +223,16 @@ class ContromeSensor(SensorEntity):
                     self._attr_native_value = sensor.get("wert")
                     break
         elif sensor_type == "total_offset":
-            self._attr_name = KEY_TOTAL_OFFSET
+            self._attr_name = "Offset"
+            self.entity_id = f"sensor.controme_{room_name_lower}_offset"
             self._attr_translation_key = "total_offset"
             self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
             self._attr_device_class = SensorDeviceClass.TEMPERATURE
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_value = room_data.get("total_offset")
         elif sensor_type == "operation_mode":
-            self._attr_name = KEY_OPERATION_MODE
+            self._attr_name = "Mode"
+            self.entity_id = f"sensor.controme_{room_name_lower}_mode"
             self._attr_translation_key = "operation_mode"
             self._attr_native_value = room_data.get("betriebsart")
 
