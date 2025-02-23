@@ -2,10 +2,10 @@
     "config": {
         "step": {
             "user": {
-                "title": "Connect to Controme",
-                "description": "Set up your Controme integration",
+                "title": "Controme Connection",
+                "description": "Enter the connection details for your Controme system",
                 "data": {
-                    "api_url": "API URL or IP address",
+                    "api_url": "API URL",
                     "user": "Username",
                     "password": "Password"
                 }
@@ -30,7 +30,7 @@
     "entity": {
         "sensor": {
             "current": {
-                "name": "Temperature"
+                "name": "Current Temperature"
             },
             "target": {
                 "name": "Target Temperature"
@@ -38,18 +38,17 @@
             "humidity": {
                 "name": "Humidity"
             },
+            "return": {
+                "name": "Return Temperature"
+            },
             "total_offset": {
                 "name": "Total Offset"
             },
             "operation_mode": {
                 "name": "Operation Mode",
                 "state": {
-                    "heating": "Heating"
-                }
-            },
-            "return": {
-                "state": {
-                    "name": "Return {description}"
+                    "Heating": "Heating",
+                    "Off": "Off"
                 }
             }
         },
@@ -65,6 +64,10 @@
                             "comfort": "Comfort"
                         }
                     }
+                },
+                "state": {
+                    "heat": "Heat",
+                    "off": "Off"
                 }
             }
         }

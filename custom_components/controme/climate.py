@@ -14,35 +14,25 @@ from homeassistant.const import (
     UnitOfTemperature,
     PERCENTAGE,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from aiohttp import ClientTimeout
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
 
 from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=60)
+REQUEST_TIMEOUT = ClientTimeout(total=10)  # 10 Sekunden Timeout
 ATTR_HUMIDITY = "current_humidity"
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     """Set up the Controme climate platform."""
     climate_devices = []
-    base_url = entry.data.get(CONF_API_URL)
-    house_id = entry.data.get(CONF_HAUS_ID)
-    user = entry.data.get(CONF_USER)
-    password = entry.data.get(CONF_PASSWORD)
-
-    endpoint = f"{base_url}/get/json/v1/{house_id}/temps/"
-    session = hass.helpers.aiohttp_client.async_get_clientsession()
-    try:
-        async with session.get(endpoint) as response:
-            if response.status != 200:
-                _LOGGER.error("Error fetching floors for climate, status %s", response.status)
-                return
-            data = await response.json()
-    except Exception as ex:
-        _LOGGER.exception("Exception during fetching climate data: %s", ex)
-        return
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    data = coordinator.data
+    house_id = entry.data[CONF_HAUS_ID]
 
     # Process all floors and rooms
     for floor in data:
@@ -58,6 +48,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             if not room_id:
                 room_id = f"{floor_id}_{index}"
             room_name = room.get("name", f"Room {room_id}")
+            room["floor_id"] = floor_id
 
             device_info = DeviceInfo(
                 identifiers={(DOMAIN, f"{house_id}_{floor_id}_{room_id}")},
@@ -69,55 +60,73 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
             climate_devices.append(
                 ContromeClimate(
-                    base_url,
-                    house_id,
-                    floor_id,
-                    room_id,
-                    room_name,
-                    device_info,
+                    coordinator,
+                    entry,
                     room,
-                    user,
-                    password,
+                    device_info,
                 )
             )
 
     async_add_entities(climate_devices)
 
-class ContromeClimate(ClimateEntity):
+class ContromeClimate(CoordinatorEntity, ClimateEntity):
     """Representation of a Controme Climate device."""
 
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_modes = [HVACMode.HEAT]
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
 
-    def __init__(
-        self,
-        base_url: str,
-        house_id: str,
-        floor_id: str,
-        room_id: str,
-        room_name: str,
-        device_info: DeviceInfo,
-        room_data: dict,
-        user: str,
-        password: str,
-    ):
+    def __init__(self, coordinator, config_entry, room_data, device_info):
         """Initialize the climate device."""
-        self._base_url = base_url
-        self._house_id = house_id
-        self._floor_id = floor_id
-        self._room_id = room_id
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._base_url = config_entry.data[CONF_API_URL].rstrip('/')
         self._device_info = device_info
         self._room_data = room_data
-        self._user = user
-        self._password = password
-        self._attr_unique_id = f"{house_id}_{floor_id}_{room_id}_climate"
-        self.entity_id = f"climate.controme_{room_name.lower()}"
-        self._attr_name = room_name
-        self._attr_current_temperature = room_data.get("temperatur")
-        self._attr_target_temperature = room_data.get("solltemperatur")
-        self._attr_hvac_mode = HVACMode.HEAT if room_data.get("betriebsart") == "Heating" else None
-        self._attr_current_humidity = room_data.get("luftfeuchte")
+        self._attr_name = room_data.get("name")
+        self._room_id = room_data.get("id")
+        self._floor_id = room_data.get("floor_id")
+        self._house_id = config_entry.data[CONF_HAUS_ID]
+        self._user = config_entry.data[CONF_USER]
+        self._password = config_entry.data[CONF_PASSWORD]
+        self._attr_unique_id = f"{config_entry.data[CONF_HAUS_ID]}_{self._floor_id}_{self._room_id}_climate"
+        self.entity_id = f"climate.controme_{self._attr_name.lower().replace(' ', '_')}"
+        self._update_from_data(room_data)
+
+        # Set supported features
+        self._attr_supported_features = (
+            ClimateEntityFeature.TARGET_TEMPERATURE
+        )
+        
+        # Set temperature settings
+        self._attr_target_temperature_step = 0.5
+        self._attr_min_temp = 5
+        self._attr_max_temp = 30
+        self._attr_temperature_unit = UnitOfTemperature.CELSIUS
+        
+        # Set HVAC modes
+        self._attr_hvac_modes = [
+            HVACMode.HEAT,
+            HVACMode.OFF,
+        ]
+
+    def _update_from_data(self, data):
+        """Update attrs from data."""
+        self._attr_current_temperature = data.get("temperatur")
+        self._attr_target_temperature = data.get("solltemperatur")
+        self._attr_hvac_mode = HVACMode.HEAT if data.get("betriebsart") == "Heating" else None
+        self._attr_current_humidity = data.get("luftfeuchte")
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        for floor in self.coordinator.data:
+            if floor["id"] == self._floor_id:
+                for room in floor.get("raeume", []):
+                    if room["id"] == self._room_id:
+                        self._update_from_data(room)
+                        break
+        self.async_write_ha_state()
 
     @property
     def device_info(self):
@@ -177,32 +186,3 @@ class ContromeClimate(ClimateEntity):
             return
 
         self._attr_target_temperature = temperature
-
-    async def async_update(self):
-        """Update the entity."""
-        session = async_get_clientsession(self.hass)
-        endpoint = f"{self._base_url}/get/json/v1/{self._house_id}/temps/"
-        
-        try:
-            async with session.get(endpoint) as response:
-                if response.status != 200:
-                    _LOGGER.error("Error updating climate: %s", response.status)
-                    return
-                data = await response.json()
-        except Exception as ex:
-            _LOGGER.exception("Exception during updating climate: %s", ex)
-            return
-
-        for floor in data:
-            if floor.get("id") == self._floor_id:
-                rooms = floor.get("raeume", [])
-                if not rooms and ("temperatur" in floor or "solltemperatur" in floor):
-                    rooms = [floor]
-                for room in rooms:
-                    if room.get("id") == self._room_id:
-                        self._room_data = room
-                        self._attr_current_temperature = room.get("temperatur")
-                        self._attr_target_temperature = room.get("solltemperatur")
-                        self._attr_hvac_mode = HVACMode.HEAT if room.get("betriebsart") == "Heating" else None
-                        self._attr_current_humidity = room.get("luftfeuchte")
-                        return

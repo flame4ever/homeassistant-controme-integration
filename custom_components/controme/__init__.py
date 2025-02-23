@@ -5,7 +5,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.const import Platform
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
-from .const import DOMAIN, CONF_HAUS_ID
+from .coordinator import ContromeDataUpdateCoordinator
+from .const import DOMAIN, CONF_HAUS_ID, CONF_API_URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,7 +22,18 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Controme from a config entry."""
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = entry.data
+    coordinator = ContromeDataUpdateCoordinator(
+        hass,
+        entry.data[CONF_API_URL],
+        entry.data[CONF_HAUS_ID],
+    )
+    
+    await coordinator.async_config_entry_first_refresh()
+    
+    hass.data[DOMAIN][entry.entry_id] = {
+        "coordinator": coordinator,
+        "config": entry.data,
+    }
 
     # Register the main Controme hub device
     device_registry = dr.async_get(hass)
