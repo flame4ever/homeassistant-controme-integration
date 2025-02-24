@@ -40,8 +40,8 @@
             "operation_mode": {
                 "name": "Betriebsart",
                 "state": {
-                    "Heating": "Heizen",
-                    "Off": "Aus"
+                    "heating": "Heizen",
+                    "off": "Aus"
                 }
             }
         },
