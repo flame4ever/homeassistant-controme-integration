@@ -250,43 +250,41 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
                         break
         self.async_write_ha_state()
 
-    async def async_update(self):
-        """Update sensor state."""
-        session = async_get_clientsession(self.hass)
-        endpoint = f"{self._base_url}/get/json/v1/{self._house_id}/temps/"
-        try:
-            async with session.get(endpoint, timeout=REQUEST_TIMEOUT) as response:
-                if response.status != 200:
-                    _LOGGER.error("Error updating sensors for house %s, status: %s", 
-                                self._house_id, response.status)
-                    return
-                data = await response.json()
-        except Exception as ex:
-            _LOGGER.warning("Error updating sensor data: %s - Will retry next update", str(ex))
-            return
-
-        # Find the corresponding room and update values
-        for floor in data:
-            if floor.get("id") == self._floor_id:
-                rooms = floor.get("raeume", [])
-                if not rooms and ("temperatur" in floor or "solltemperatur" in floor):
-                    rooms = [floor]
-                for room in rooms:
-                    if room.get("id") == self._room_id:
-                        self._room_data = room
-                        self._update_from_data(room)
-                        return
-
     def _update_from_data(self, room_data):
         """Update sensor state from room data."""
         if self._sensor_type.startswith("return_"):
             for sensor in room_data.get("sensoren", []):
                 sensor_id = "_".join(self._sensor_type.split("_")[1:])
                 if sensor.get("name") == sensor_id:
-                    self._attr_native_value = sensor.get("wert")
+                    value = sensor.get("wert")
+                    # Handle non-numeric values for numeric sensors
+                    if isinstance(value, str) and not value.replace('.', '', 1).isdigit():
+                        self._attr_native_value = None
+                        self._attr_available = False
+                    else:
+                        self._attr_native_value = value
+                        self._attr_available = True
                     break
         else:
-            self._attr_native_value = room_data.get(VALUE_MAP.get(self._sensor_type))
+            value = room_data.get(VALUE_MAP.get(self._sensor_type))
+            # For numeric sensors, ensure we have numeric values
+            if self.entity_description.device_class in [
+                SensorDeviceClass.TEMPERATURE, 
+                SensorDeviceClass.HUMIDITY
+            ]:
+                if not value or (isinstance(value, str) and not value.replace('.', '', 1).isdigit()):
+                    self._attr_native_value = None
+                    self._attr_available = False
+                else:
+                    try:
+                        self._attr_native_value = float(value) if value is not None else None
+                        self._attr_available = True
+                    except (ValueError, TypeError):
+                        self._attr_native_value = None
+                        self._attr_available = False
+            else:
+                self._attr_native_value = value
+                self._attr_available = value is not None
 
 class ContromeOperationModeSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Controme Operation Mode Sensor."""
@@ -322,8 +320,8 @@ class ContromeOperationModeSensor(CoordinatorEntity, SensorEntity):
         # Set name
         self._attr_name = "Betriebsart"
 
-        # Set initial value
-        self._attr_native_value = room_data.get(VALUE_MAP["operation_mode"])
+        # Set initial value and availability
+        self._update_from_data(room_data)
 
     @property
     def device_info(self):
@@ -333,10 +331,21 @@ class ContromeOperationModeSensor(CoordinatorEntity, SensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        updated = False
         for floor in self.coordinator.data:
             if floor["id"] == self._floor_id:
                 for room in floor.get("raeume", []):
                     if room["id"] == self._room_id:
-                        self._attr_native_value = room.get(VALUE_MAP["operation_mode"])
+                        self._update_from_data(room)
+                        updated = True
                         break
+                if updated:
+                    break
+        
         self.async_write_ha_state()
+        
+    def _update_from_data(self, room_data):
+        """Update the sensor state from room data."""
+        value = room_data.get(VALUE_MAP["operation_mode"])
+        self._attr_native_value = value
+        self._attr_available = value is not None

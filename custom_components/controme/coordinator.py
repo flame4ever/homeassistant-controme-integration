@@ -38,9 +38,28 @@ class ContromeDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         endpoint = f"{self._base_url}/get/json/v1/{self._house_id}/temps/"
 
         try:
+            start_time = self.hass.loop.time()
             async with session.get(endpoint, timeout=REQUEST_TIMEOUT) as response:
                 if response.status != 200:
                     raise UpdateFailed(f"Error fetching data: {response.status}")
-                return await response.json()
+                data = await response.json()
+                
+            fetch_time = self.hass.loop.time() - start_time
+            _LOGGER.debug("Finished fetching controme data in %.3f seconds (success: True)", fetch_time)
+            
+            # Log a sample of the data for debugging
+            if data and isinstance(data, list) and len(data) > 0:
+                _LOGGER.debug("Received data for %d floors", len(data))
+                # Sample the first floor for debugging
+                first_floor = data[0]
+                if "raeume" in first_floor and first_floor["raeume"]:
+                    sample_room = first_floor["raeume"][0]
+                    # Log without sensitive values
+                    safe_sample = {k: v for k, v in sample_room.items() 
+                                if k not in ["password", "token"]}
+                    _LOGGER.debug("Sample room data: %s", safe_sample)
+            
+            return data
         except Exception as ex:
+            _LOGGER.error("Error communicating with API: %s", str(ex))
             raise UpdateFailed(f"Error communicating with API: {str(ex)}") 

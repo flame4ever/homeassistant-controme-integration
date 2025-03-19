@@ -181,8 +181,15 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
                     return
                 else:
                     _LOGGER.debug("Successfully set temperature: %s", response_text)
+                    
+                    # Set local value immediately for responsive UI
+                    self._attr_target_temperature = temperature
+                    self.async_write_ha_state()
+                    
+                    # Request an immediate data refresh to update all entities
+                    _LOGGER.debug("Requesting immediate data refresh after temperature change")
+                    await self.coordinator.async_refresh()
+                    
         except Exception as ex:
             _LOGGER.exception("Exception during setting temperature: %s", ex)
             return
-
-        self._attr_target_temperature = temperature
