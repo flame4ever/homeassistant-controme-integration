@@ -21,6 +21,7 @@ from aiohttp import ClientTimeout
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
 
 from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD
+from .device import link_to_hub
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=60)
@@ -31,6 +32,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     """Set up the Controme climate platform."""
     climate_devices = []
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    hub_device_id = hass.data[DOMAIN][entry.entry_id].get("hub_device_id")
     data = coordinator.data
     house_id = entry.data[CONF_HAUS_ID]
 
@@ -50,12 +52,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             room_name = room.get("name", f"Room {room_id}")
             room["floor_id"] = floor_id
 
-            device_info = DeviceInfo(
-                identifiers={(DOMAIN, f"{house_id}_{floor_id}_{room_id}")},
-                name=room_name,
-                manufacturer="Controme",
-                model="Thermostat API",
-                via_device=(DOMAIN, f"{house_id}"),
+            device_info = link_to_hub(
+                DeviceInfo(
+                    identifiers={(DOMAIN, f"{house_id}_{floor_id}_{room_id}")},
+                    name=room_name,
+                    manufacturer="Controme",
+                    model="Thermostat API",
+                ),
+                hub_device_id,
+                house_id,
             )
 
             climate_devices.append(

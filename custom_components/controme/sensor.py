@@ -29,6 +29,7 @@ from .const import (
     VALUE_MAP,
     SENSOR_TYPE_OPERATION_MODE,
 )
+from .device import link_to_hub
 
 from dataclasses import dataclass
 
@@ -82,6 +83,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     """Set up the Controme sensor platform."""
     sensors = []
     coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    hub_device_id = hass.data[DOMAIN][entry.entry_id].get("hub_device_id")
     data = coordinator.data
     house_id = entry.data[CONF_HAUS_ID]
 
@@ -119,12 +121,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
             # Add room data
             room["floor_id"] = floor_id
-            device_info = DeviceInfo(
-                identifiers={(DOMAIN, f"{house_id}_{floor_id}_{room_id}")},
-                name=room_name,
-                manufacturer="Controme",
-                model="Room",
-                via_device=(DOMAIN, house_id),
+            device_info = link_to_hub(
+                DeviceInfo(
+                    identifiers={(DOMAIN, f"{house_id}_{floor_id}_{room_id}")},
+                    name=room_name,
+                    manufacturer="Controme",
+                    model="Room",
+                ),
+                hub_device_id,
+                house_id,
             )
 
             # Add basic sensors

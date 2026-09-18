@@ -37,13 +37,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Register the main Controme hub device
     device_registry = dr.async_get(hass)
-    device_registry.async_get_or_create(
+    hub_device = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, entry.data[CONF_HAUS_ID])},
         manufacturer="Controme",
         name=f"Controme Home {entry.data[CONF_HAUS_ID]}",
         model="Thermostat API",
     )
+    hass.data[DOMAIN][entry.entry_id]["hub_device_id"] = hub_device.id
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
