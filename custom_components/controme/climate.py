@@ -9,7 +9,6 @@ from homeassistant.components.climate import (
 )
 from homeassistant.const import (
     ATTR_TEMPERATURE,
-    PRECISION_HUNDREDTHS,
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
@@ -69,8 +68,6 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
     _attr_name = None
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_target_temperature_step = 0.5
-    # Same precision as the temperature sensors, Controme reports e.g. 21.25
-    _attr_precision = PRECISION_HUNDREDTHS
     _attr_min_temp = 5
     _attr_max_temp = 30
     # Switching rooms off is not implemented, so only heating is offered
