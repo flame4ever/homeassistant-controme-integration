@@ -69,7 +69,7 @@ The Controme hub device gets three diagnostic entities, based on the "last trans
 
 The values are recalculated every minute, so a sensor keeps aging and the problem flag turns on even while the Controme system cannot be reached. Sensors without a readable timestamp never count as stale.
 
-**Threshold:** Settings -> Devices & Services -> Controme -> Configure. A sensor is stale if it has not transmitted for longer than the threshold (1-1440 minutes, default 15). Controme reports times in whole minutes, so a sensor can be up to 59 seconds older than shown; very small thresholds are therefore imprecise.
+**Threshold:** Settings -> Devices & Services -> Controme -> Configure. A sensor is stale if it has not transmitted for longer than the threshold (5-1440 minutes, default 15). Controme reports times in whole minutes, so a sensor can be up to 59 seconds older than shown; the minimum of 5 minutes keeps the flag from flickering. Values below 5 that were stored by an earlier version are treated as 5.
 
 **Time zone:** Controme reports local time without a time zone. The integration assumes the Home Assistant time zone, so it must be the same as the time zone of the Controme system, otherwise the times are off by the difference. In the repeated hour of the change from daylight saving time to standard time the timestamps are ambiguous; the first occurrence is used, so sensors can briefly appear one hour older.
 

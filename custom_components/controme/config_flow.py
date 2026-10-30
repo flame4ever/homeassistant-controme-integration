@@ -23,10 +23,10 @@ from .const import (
     CONF_PASSWORD,
     DEFAULT_HAUS_ID,
     CONF_STALE_THRESHOLD,
-    DEFAULT_STALE_THRESHOLD,
     MIN_STALE_THRESHOLD,
     MAX_STALE_THRESHOLD,
 )
+from .entity import stale_threshold_minutes
 from .helpers import scan_network
 
 _LOGGER = logging.getLogger(__name__)
@@ -277,7 +277,8 @@ class ContromeOptionsFlow(config_entries.OptionsFlow):
             )
 
         # self.config_entry is provided by OptionsFlow, entries without the option use the default
-        threshold = self.config_entry.options.get(CONF_STALE_THRESHOLD, DEFAULT_STALE_THRESHOLD)
+        # Stored values below the minimum are shown raised to the minimum
+        threshold = stale_threshold_minutes(self.config_entry.options)
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({

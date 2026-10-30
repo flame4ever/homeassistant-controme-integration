@@ -65,7 +65,7 @@
                     "stale_threshold": "Schwelle für veraltete Sensoren"
                 },
                 "data_description": {
-                    "stale_threshold": "Minuten ohne Übertragung, nach denen ein Sensor als veraltet gilt (1-1440, Standard 15)."
+                    "stale_threshold": "Minuten ohne Übertragung, nach denen ein Sensor als veraltet gilt (mindestens 5, höchstens 1440, Standard 15)."
                 }
             }
         }

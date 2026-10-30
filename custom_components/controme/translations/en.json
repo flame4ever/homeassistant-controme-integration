@@ -65,7 +65,7 @@
                     "stale_threshold": "Stale sensor threshold"
                 },
                 "data_description": {
-                    "stale_threshold": "Minutes without a transmission after which a sensor counts as stale (1-1440, default 15)."
+                    "stale_threshold": "Minutes without a transmission after which a sensor counts as stale (minimum 5, maximum 1440, default 15)."
                 }
             }
         }

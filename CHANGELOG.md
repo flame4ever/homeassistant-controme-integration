@@ -4,7 +4,7 @@
 
 ### New Features
 - **Transmission Monitoring** (#21): The Controme hub device gets three diagnostic entities: "Last transmission" (newest transmission of all sensors), "Stale sensors" (number of sensors without a transmission within the threshold) and the problem binary sensor "Transmission problem" with the attributes `threshold_minutes` and `stale_sensors` (up to 20 sensors, oldest first). The values are recalculated every minute, so the flag also turns on while the Controme system cannot be reached. The entity IDs are fixed and language independent: `sensor.controme_last_transmission`, `sensor.controme_stale_sensors` and `binary_sensor.controme_transmission_problem`.
-- **Options**: The threshold for stale sensors can be set under Configure (1-1440 minutes, default 15). Existing entries use the default.
+- **Options**: The threshold for stale sensors can be set under Configure (5-1440 minutes, default 15). Existing entries use the default; stored values below 5 are treated as 5, so the flag does not flicker because of the minute resolution of Controme.
 
 ### Notes
 - **Room Temperature Sensor** (#5): No change needed. The current temperature of a room already is the value of the sensor that Controme marks as room temperature sensor (also for virtual sensors); this was checked on a live system for all rooms.

@@ -17,7 +17,8 @@ DEFAULT_HAUS_ID: Final = "1"
 # Option: sensors whose last transmission is older than this (minutes) are stale
 CONF_STALE_THRESHOLD: Final = "stale_threshold"
 DEFAULT_STALE_THRESHOLD: Final = 15
-MIN_STALE_THRESHOLD: Final = 1
+# Below 5 minutes the minute resolution of Controme makes the flag flicker
+MIN_STALE_THRESHOLD: Final = 5
 MAX_STALE_THRESHOLD: Final = 1440
 
 # Platforms are now defined in __init__.py
