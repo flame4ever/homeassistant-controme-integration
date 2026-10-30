@@ -91,13 +91,29 @@ class ContromeDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
         if not isinstance(outs, list) or not isinstance(data, list):
             return
-        outputs = {
-            (floor.get("id"), room.get("id")): room.get("ausgang")
-            for floor in outs
-            for room in floor.get("raeume") or []
-        }
-        for floor in data:
-            for room in floor.get("raeume") or []:
-                ausgang = outputs.get((floor.get("id"), room.get("id")))
-                if isinstance(ausgang, dict):
-                    room["ausgang"] = ausgang
+        # Malformed floors, room lists and rooms are skipped, so /outs/ never breaks the update
+        outputs = {}
+        for floor, room in _iter_floor_rooms(outs):
+            key = _room_key(floor, room)
+            if key is not None and isinstance(room.get("ausgang"), dict):
+                outputs[key] = room["ausgang"]
+        for floor, room in _iter_floor_rooms(data):
+            key = _room_key(floor, room)
+            if key in outputs:
+                room["ausgang"] = outputs[key]
+
+def _iter_floor_rooms(floors: list):
+    """Yield (floor, room) for all floors and rooms that are dicts."""
+    for floor in floors:
+        if not isinstance(floor, dict) or not isinstance(floor.get("raeume"), list):
+            continue
+        for room in floor["raeume"]:
+            if isinstance(room, dict):
+                yield floor, room
+
+def _room_key(floor: dict, room: dict):
+    """Return the (floor ID, room ID) key, or None if an ID cannot be used as key."""
+    key = (floor.get("id"), room.get("id"))
+    if all(part is None or isinstance(part, (int, str)) for part in key):
+        return key
+    return None
