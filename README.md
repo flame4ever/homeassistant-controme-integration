@@ -16,6 +16,7 @@ Home Assistant integration for Controme heating systems. This integration allows
 - Return temperature sensors
 - Total offset display
 - Operation mode status
+- Transmission monitoring: shows when Controme last received sensor data and flags sensors that stopped transmitting
 - Automatic updates every 60 seconds
 
 ## Installation
@@ -60,6 +61,18 @@ For each room, the integration creates:
 - Total Offset
 - Operation Mode
 
+### Transmission Monitoring (hub device)
+The Controme hub device gets three diagnostic entities, based on the "last transmission" time Controme reports for every sensor:
+- **Last transmission** (timestamp): the newest transmission of all sensors
+- **Stale sensors** (number): sensors whose last transmission is older than the threshold
+- **Transmission problem** (binary sensor, problem): on if at least one sensor is stale. The attributes `threshold_minutes` and `stale_sensors` list up to 20 stale sensors (oldest first) with room, description, name and last transmission.
+
+The values are recalculated every minute, so a sensor keeps aging and the problem flag turns on even while the Controme system cannot be reached. Sensors without a readable timestamp never count as stale.
+
+**Threshold:** Settings -> Devices & Services -> Controme -> Configure. A sensor is stale if it has not transmitted for longer than the threshold (1-1440 minutes, default 15). Controme reports times in whole minutes, so a sensor can be up to 59 seconds older than shown; very small thresholds are therefore imprecise.
+
+**Time zone:** Controme reports local time without a time zone. The integration assumes the Home Assistant time zone, so it must be the same as the time zone of the Controme system, otherwise the times are off by the difference. In the repeated hour of the change from daylight saving time to standard time the timestamps are ambiguous; the first occurrence is used, so sensors can briefly appear one hour older.
+
 ## Supported Languages
 - English
 - German (Deutsch)
@@ -72,6 +85,7 @@ For each room, the integration creates:
 - Several Controme systems with the same haus_id are not supported. The IDs of devices and entities are built from haus_id, floor and room, so a second system with the same haus_id would collide with the first one. The haus_id (usually 1, sometimes 2) is entered during setup.
 - The HVAC mode of the climate entities shows the Controme operation mode but cannot be switched from Home Assistant.
 - Floors without rooms and rooms without their own ID are shown, but their target temperature cannot be set.
+- The transmission monitoring entities use the haus_id in their IDs as well (e.g. `1_transmission_problem`), so they are affected by the same haus_id limitation.
 
 ## Support
 

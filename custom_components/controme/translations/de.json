@@ -56,6 +56,20 @@
             "already_configured": "Gerät ist bereits konfiguriert"
         }
     },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Controme Optionen",
+                "description": "Einstellungen für die Überwachung der Übertragung der Controme Sensoren.",
+                "data": {
+                    "stale_threshold": "Schwelle für veraltete Sensoren"
+                },
+                "data_description": {
+                    "stale_threshold": "Minuten ohne Übertragung, nach denen ein Sensor als veraltet gilt (1-1440, Standard 15)."
+                }
+            }
+        }
+    },
     "selector": {
         "discovery_method": {
             "options": {
@@ -83,6 +97,17 @@
             },
             "operation_mode": {
                 "name": "Betriebsart"
+            },
+            "last_transmission": {
+                "name": "Letzte Übertragung"
+            },
+            "stale_sensors": {
+                "name": "Veraltete Sensoren"
+            }
+        },
+        "binary_sensor": {
+            "transmission_problem": {
+                "name": "Übertragungsproblem"
             }
         }
     }

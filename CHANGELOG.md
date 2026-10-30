@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+- **Transmission Monitoring** (#21): The Controme hub device gets three diagnostic entities: "Last transmission" (newest transmission of all sensors), "Stale sensors" (number of sensors without a transmission within the threshold) and the problem binary sensor "Transmission problem" with the attributes `threshold_minutes` and `stale_sensors` (up to 20 sensors, oldest first). The values are recalculated every minute, so the flag also turns on while the Controme system cannot be reached.
+- **Options**: The threshold for stale sensors can be set under Configure (1-1440 minutes, default 15). Existing entries use the default.
+
+### Notes
+- **Room Temperature Sensor** (#5): No change needed. The current temperature of a room already is the value of the sensor that Controme marks as room temperature sensor (also for virtual sensors); this was checked on a live system for all rooms.
+- Controme reports local time without a time zone; the Home Assistant time zone must match the Controme system (see README).
+- Purely additive: existing entities, entity IDs, unique IDs and values are unchanged.
+
 ## 2.0.0 (2026-10-30)
 
 > **Breaking:** Home Assistant 2026.8.0 or newer is required. Entity IDs and unique IDs stay the same, but some display names change and climate entities now show the Controme operation mode and heating activity.
