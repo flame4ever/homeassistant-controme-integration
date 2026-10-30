@@ -32,7 +32,7 @@ _LOGGER = logging.getLogger(__name__)
 # Sensors only read coordinator data, so updates need no limit
 PARALLEL_UPDATES = 0
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class ContromeSensorEntityDescription(SensorEntityDescription):
     """Describes Controme sensor entity."""
 

@@ -145,7 +145,7 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Run the scan
             self._discovered_systems = await scan_network()
             _LOGGER.info("Network scan complete. Found %d systems", len(self._discovered_systems))
-        except Exception as err:
+        except (aiohttp.ClientError, TimeoutError, OSError, ValueError) as err:
             _LOGGER.error("Error scanning network: %s", err)
             self._discovered_systems = []
 
