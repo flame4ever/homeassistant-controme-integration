@@ -4,14 +4,29 @@ from typing import Any, Optional
 import voluptuous as vol
 import aiohttp
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
 )
-from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD, DEFAULT_HAUS_ID
+from .const import (
+    DOMAIN,
+    CONF_API_URL,
+    CONF_HAUS_ID,
+    CONF_USER,
+    CONF_PASSWORD,
+    DEFAULT_HAUS_ID,
+    CONF_STALE_THRESHOLD,
+    DEFAULT_STALE_THRESHOLD,
+    MIN_STALE_THRESHOLD,
+    MAX_STALE_THRESHOLD,
+)
 from .helpers import scan_network
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,6 +75,12 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize the config flow."""
         self._discovered_systems = []
         self._scan_already_run = False
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> "ContromeOptionsFlow":
+        """Return the options flow for the stale sensor threshold."""
+        return ContromeOptionsFlow()
 
     async def async_step_user(self, user_input: Optional[dict[str, Any]] = None) -> ConfigFlowResult:
         """Handle the initial step."""
@@ -243,3 +264,31 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self._process_user_input(user_input, "select_system")
 
         return self._show_step_form("select_system")
+
+class ContromeOptionsFlow(config_entries.OptionsFlow):
+    """Handle the Controme options (stale sensor threshold)."""
+
+    async def async_step_init(self, user_input: Optional[dict[str, Any]] = None) -> ConfigFlowResult:
+        """Manage the stale sensor threshold."""
+        if user_input is not None:
+            # The number selector returns a float, the threshold is stored in whole minutes
+            return self.async_create_entry(
+                data={CONF_STALE_THRESHOLD: int(user_input[CONF_STALE_THRESHOLD])}
+            )
+
+        # self.config_entry is provided by OptionsFlow, entries without the option use the default
+        threshold = self.config_entry.options.get(CONF_STALE_THRESHOLD, DEFAULT_STALE_THRESHOLD)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Required(CONF_STALE_THRESHOLD, default=threshold): NumberSelector(
+                    NumberSelectorConfig(
+                        min=MIN_STALE_THRESHOLD,
+                        max=MAX_STALE_THRESHOLD,
+                        step=1,
+                        unit_of_measurement="min",
+                        mode=NumberSelectorMode.BOX,
+                    )
+                ),
+            }),
+        )
