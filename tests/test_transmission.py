@@ -29,7 +29,11 @@ def _load_helpers():
     sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
     sys.modules["homeassistant.util"] = util_stub
     sys.modules["homeassistant.util.dt"] = dt_stub
-    sys.modules.setdefault("aiohttp", types.ModuleType("aiohttp"))
+    # helpers.py uses aiohttp in annotations, which are evaluated on import before Python 3.14
+    aiohttp_stub = types.ModuleType("aiohttp")
+    aiohttp_stub.ClientSession = type("ClientSession", (), {})
+    aiohttp_stub.ClientError = type("ClientError", (Exception,), {})
+    sys.modules.setdefault("aiohttp", aiohttp_stub)
     spec = importlib.util.spec_from_file_location(
         "controme_helpers", ROOT / "custom_components" / "controme" / "helpers.py"
     )
@@ -164,7 +168,8 @@ def test_dst_missing_hour():
     parsed = _parse_in(berlin, "29.03.2026 02:30")
     assert parsed.utcoffset() == timedelta(hours=1)
     assert parsed.astimezone(timezone.utc) == datetime(2026, 3, 29, 1, 30, tzinfo=timezone.utc)
-    assert parsed.astimezone(berlin).replace(tzinfo=None) == datetime(2026, 3, 29, 3, 30)
+    # Convert via UTC, astimezone() with the same tzinfo would not convert at all
+    assert parsed.astimezone(timezone.utc).astimezone(berlin).replace(tzinfo=None) == datetime(2026, 3, 29, 3, 30)
 
 
 def test_empty_data():
