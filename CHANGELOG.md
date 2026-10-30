@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.0 (2026-10-30)
 
 ### New Features
 - **Transmission Monitoring** (#21): The Controme hub device gets three diagnostic entities: "Last transmission" (newest transmission of all sensors), "Stale sensors" (number of sensors without a transmission within the threshold) and the problem binary sensor "Transmission problem" with the attributes `threshold_minutes` and `stale_sensors` (up to 20 sensors, oldest first). The values are recalculated every minute, so the flag also turns on while the Controme system cannot be reached. The entity IDs are fixed and language independent: `sensor.controme_last_transmission`, `sensor.controme_stale_sensors` and `binary_sensor.controme_transmission_problem`.
