@@ -84,6 +84,7 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         self._password = config_entry.data[CONF_PASSWORD]
         self._attr_unique_id = f"{config_entry.data[CONF_HAUS_ID]}_{self._floor_id}_{self._room_id}_climate"
         self.entity_id = f"climate.controme_{slugify(self._attr_name)}"
+        self._room_present = True
         self._update_from_data(room_data)
 
         # Set supported features
@@ -112,11 +113,17 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         """Handle updated data from the coordinator."""
         room = find_room(self.coordinator.data, self._floor_id, self._room_id)
         if room is None:
-            self._attr_available = False
+            self._room_present = False
         else:
-            self._attr_available = True
+            self._room_present = True
             self._update_from_data(room)
         self.async_write_ha_state()
+
+    @property
+    def available(self) -> bool:
+        """Return if the coordinator is up and the room is still reported."""
+        # CoordinatorEntity.available only reflects the last coordinator update
+        return super().available and self._room_present
 
     @property
     def device_info(self):

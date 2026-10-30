@@ -213,6 +213,12 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
         return self._device_info
 
     @property
+    def available(self) -> bool:
+        """Return if the coordinator is up and the sensor has a valid value."""
+        # CoordinatorEntity.available only reflects the last coordinator update
+        return super().available and self._has_value
+
+    @property
     def extra_state_attributes(self):
         """Return the state attributes."""
         return {
@@ -226,7 +232,7 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
         """Handle updated data from the coordinator."""
         room = find_room(self.coordinator.data, self._floor_id, self._room_id)
         if room is None:
-            self._attr_available = False
+            self._has_value = False
         else:
             self._update_from_data(room)
         self.async_write_ha_state()
@@ -240,8 +246,11 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
                     value = to_float(sensor.get("wert"))
                     # Non-numeric values like "kein Sensor vorhanden" mark the sensor unavailable
                     self._attr_native_value = value
-                    self._attr_available = value is not None
+                    self._has_value = value is not None
                     break
+            else:
+                # The return sensor is no longer reported for this room
+                self._has_value = False
         else:
             value = room_data.get(VALUE_MAP.get(self._sensor_type))
             # For numeric sensors, ensure we have numeric values
@@ -252,10 +261,10 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
                 # 0 and negative values (e.g. offsets) are valid readings
                 value = to_float(value)
                 self._attr_native_value = value
-                self._attr_available = value is not None
+                self._has_value = value is not None
             else:
                 self._attr_native_value = value
-                self._attr_available = value is not None
+                self._has_value = value is not None
 
 class ContromeOperationModeSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Controme Operation Mode Sensor."""
@@ -299,12 +308,18 @@ class ContromeOperationModeSensor(CoordinatorEntity, SensorEntity):
         """Return device info for this sensor."""
         return self._device_info
 
+    @property
+    def available(self) -> bool:
+        """Return if the coordinator is up and the sensor has a valid value."""
+        # CoordinatorEntity.available only reflects the last coordinator update
+        return super().available and self._has_value
+
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         room = find_room(self.coordinator.data, self._floor_id, self._room_id)
         if room is None:
-            self._attr_available = False
+            self._has_value = False
         else:
             self._update_from_data(room)
         self.async_write_ha_state()
@@ -313,4 +328,4 @@ class ContromeOperationModeSensor(CoordinatorEntity, SensorEntity):
         """Update the sensor state from room data."""
         value = room_data.get(VALUE_MAP["operation_mode"])
         self._attr_native_value = value
-        self._attr_available = value is not None
+        self._has_value = value is not None
