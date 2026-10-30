@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 import sys
 import types
+import unittest
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "temps.json"
@@ -123,6 +125,48 @@ def test_unparseable_and_future_never_stale():
     assert not names & {sensor["name"] for sensor in sensors[:4]}
 
 
+def _berlin():
+    """Return the Europe/Berlin time zone, skipping if no tz database is available.
+
+    Windows has no system tz database, there ZoneInfo needs the tzdata package.
+    """
+    try:
+        return ZoneInfo("Europe/Berlin")
+    except ZoneInfoNotFoundError as err:
+        raise unittest.SkipTest(f"Europe/Berlin not available (install tzdata): {err}") from err
+
+
+def _parse_in(time_zone, value):
+    """Parse a timestamp with time_zone as Home Assistant time zone."""
+    original = helpers.dt_util.get_default_time_zone
+    helpers.dt_util.get_default_time_zone = lambda: time_zone
+    try:
+        return helpers.parse_transmission(value)
+    finally:
+        helpers.dt_util.get_default_time_zone = original
+
+
+def test_dst_repeated_hour():
+    berlin = _berlin()
+    # 25.10.2026: 03:00 CEST -> 02:00 CET, so 02:30 exists twice; the first (CEST) is used
+    parsed = _parse_in(berlin, "25.10.2026 02:30")
+    assert parsed.utcoffset() == timedelta(hours=2)
+    assert parsed.astimezone(timezone.utc) == datetime(2026, 10, 25, 0, 30, tzinfo=timezone.utc)
+    # A sensor that really sent at the second 02:30 (CET) briefly appears one hour older
+    now = datetime(2026, 10, 25, 1, 35, tzinfo=timezone.utc)  # second 02:35 local time
+    assert helpers.transmission_age(parsed, now) == timedelta(minutes=65)
+
+
+def test_dst_missing_hour():
+    berlin = _berlin()
+    # 29.03.2026: 02:00 CET -> 03:00 CEST, 02:30 does not exist; no exception, it is read
+    # with the offset before the change and corresponds to 03:30 CEST
+    parsed = _parse_in(berlin, "29.03.2026 02:30")
+    assert parsed.utcoffset() == timedelta(hours=1)
+    assert parsed.astimezone(timezone.utc) == datetime(2026, 3, 29, 1, 30, tzinfo=timezone.utc)
+    assert parsed.astimezone(berlin).replace(tzinfo=None) == datetime(2026, 3, 29, 3, 30)
+
+
 def test_empty_data():
     now = local(2026, 10, 30, 16, 0)
     for data in (None, [], [{"id": 1, "raeume": []}], [{"id": 1, "raeume": [{"id": 2}]}]):
@@ -131,13 +175,17 @@ def test_empty_data():
 
 if __name__ == "__main__":
     failures = 0
+    skipped = 0
     tests = [(name, func) for name, func in sorted(globals().items()) if name.startswith("test_")]
     for name, func in tests:
         try:
             func()
             print(f"OK   {name}")
+        except unittest.SkipTest as err:
+            skipped += 1
+            print(f"SKIP {name}: {err}")
         except AssertionError as err:
             failures += 1
             print(f"FAIL {name}: {err!r}")
-    print(f"{len(tests) - failures}/{len(tests)} tests passed")
+    print(f"{len(tests) - failures - skipped}/{len(tests)} tests passed, {skipped} skipped")
     sys.exit(1 if failures else 0)

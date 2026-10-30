@@ -8,7 +8,7 @@
 
 ### Notes
 - **Room Temperature Sensor** (#5): No change needed. The current temperature of a room already is the value of the sensor that Controme marks as room temperature sensor (also for virtual sensors); this was checked on a live system for all rooms.
-- Controme reports local time without a time zone; the Home Assistant time zone must match the Controme system (see README).
+- Controme reports local time without a time zone; the Home Assistant time zone must match the Controme system (see README). The behavior in the repeated and the skipped hour of the daylight saving time change is covered by offline tests (`tests/test_transmission.py`, need the tz database, e.g. the `tzdata` package on Windows, otherwise they are skipped).
 - Purely additive: existing entities, entity IDs, unique IDs and values are unchanged.
 
 ## 2.0.0 (2026-10-30)
