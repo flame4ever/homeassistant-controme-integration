@@ -63,7 +63,7 @@
                 "name": "Humidity"
             },
             "return": {
-                "name": "Return Temperature"
+                "name": "Return Temperature {sensor}"
             },
             "total_offset": {
                 "name": "Total Offset"
@@ -72,25 +72,6 @@
                 "name": "Operation Mode",
                 "state": {
                     "heating": "Heating",
-                    "off": "Off"
-                }
-            }
-        },
-        "climate": {
-            "controme": {
-                "name": "Heating",
-                "state_attributes": {
-                    "preset_mode": {
-                        "name": "Preset",
-                        "state": {
-                            "heating": "Heating",
-                            "eco": "Eco",
-                            "comfort": "Comfort"
-                        }
-                    }
-                },
-                "state": {
-                    "heat": "Heat",
                     "off": "Off"
                 }
             }

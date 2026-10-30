@@ -54,7 +54,7 @@
     "entity": {
         "sensor": {
             "current": {
-                "name": "Aktuelle Temperatur"
+                "name": "Temperatur"
             },
             "target": {
                 "name": "Zieltemperatur"
@@ -63,34 +63,15 @@
                 "name": "Luftfeuchtigkeit"
             },
             "return": {
-                "name": "Rücklauftemperatur"
+                "name": "Rücklauftemperatur {sensor}"
             },
             "total_offset": {
-                "name": "Gesamtoffset"
+                "name": "Temperaturanpassung"
             },
             "operation_mode": {
                 "name": "Betriebsart",
                 "state": {
                     "heating": "Heizen",
-                    "off": "Aus"
-                }
-            }
-        },
-        "climate": {
-            "controme": {
-                "name": "Heizung",
-                "state_attributes": {
-                    "preset_mode": {
-                        "name": "Voreinstellung",
-                        "state": {
-                            "heating": "Heizen",
-                            "eco": "Eco",
-                            "comfort": "Komfort"
-                        }
-                    }
-                },
-                "state": {
-                    "heat": "Heizen",
                     "off": "Aus"
                 }
             }

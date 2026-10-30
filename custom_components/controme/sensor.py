@@ -168,20 +168,6 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
         suffix = "return" if sensor_type.startswith("return_") else ENTITY_ID_MAP.get(sensor_type, sensor_type)
         self.entity_id = f"sensor.controme_{room_name_lower}_{suffix}"
 
-    def __init_name(self, sensor_type: str) -> None:
-        """Initialize the sensor name."""
-        name_map = {
-            "current": "Temperatur",
-            "target": "Zieltemperatur",
-            "humidity": "Luftfeuchtigkeit",
-            "return": "Rücklauftemperatur",
-            "total_offset": "Temperaturanpassung",
-            "operation_mode": "Betriebsart"
-        }
-        base_type = sensor_type.split("_")[0]
-        lookup_key = sensor_type if sensor_type == "total_offset" else base_type
-        self._attr_name = name_map.get(lookup_key, sensor_type)
-
     def __init__(self, coordinator, config_entry, room_data, sensor_type, device_info):
         """Initialize the sensor."""
         super().__init__(coordinator)
@@ -202,7 +188,9 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{self._house_id}_{self._floor_id}_{self._room_id}_{sensor_type}"
         self.__init_sensor_description(sensor_type)
         self.__init_entity_id(sensor_type, room_data.get("name") or f"room_{self._room_id}")
-        self.__init_name(sensor_type)
+        # The name comes from the translation_key, return sensors add their sensor name
+        if sensor_type.startswith("return_"):
+            self._attr_translation_placeholders = {"sensor": sensor_type[len("return_"):]}
         
         # Set initial values
         self._update_from_data(room_data)
@@ -296,9 +284,6 @@ class ContromeOperationModeSensor(CoordinatorEntity, SensorEntity):
             native_unit_of_measurement=None,
             has_entity_name=True,
         )
-
-        # Set name
-        self._attr_name = "Betriebsart"
 
         # Set initial value and availability
         self._update_from_data(room_data)

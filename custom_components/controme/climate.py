@@ -65,6 +65,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, asy
 class ContromeClimate(CoordinatorEntity, ClimateEntity):
     """Representation of a Controme Climate device."""
 
+    _attr_has_entity_name = True
+    # The entity takes the name of its room device
+    _attr_name = None
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_modes = [HVACMode.HEAT]
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
@@ -77,13 +80,13 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         self._device_info = device_info
         self._room_data = room_data
         self._room_id = room_data.get("room_id", room_data.get("id"))
-        self._attr_name = room_data.get("name") or f"Room {self._room_id}"
+        room_name = room_data.get("name") or f"Room {self._room_id}"
         self._floor_id = room_data.get("floor_id")
         self._house_id = config_entry.data[CONF_HAUS_ID]
         self._user = config_entry.data[CONF_USER]
         self._password = config_entry.data[CONF_PASSWORD]
         self._attr_unique_id = f"{config_entry.data[CONF_HAUS_ID]}_{self._floor_id}_{self._room_id}_climate"
-        self.entity_id = f"climate.controme_{slugify(self._attr_name)}"
+        self.entity_id = f"climate.controme_{slugify(room_name)}"
         self._room_present = True
         self._update_from_data(room_data)
 
