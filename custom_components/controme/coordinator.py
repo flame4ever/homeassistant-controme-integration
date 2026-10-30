@@ -66,7 +66,38 @@ class ContromeDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                                 if k not in ["password", "token"]}
                     _LOGGER.debug("Sample room data: %s", safe_sample)
             
-            return data
         except (ClientError, TimeoutError, ValueError) as err:
             # UpdateFailed is logged by the coordinator itself, so no extra error log here
             raise UpdateFailed(f"Error communicating with API: {err}") from err
+
+        await self._async_add_outputs(session, data)
+        return data
+
+    async def _async_add_outputs(self, session, data) -> None:
+        """Add the output (valve) values of each room as "ausgang" to the room data.
+
+        The outputs are optional, so errors only leave "ausgang" unset.
+        """
+        endpoint = f"{self._base_url}/get/json/v1/{self._house_id}/outs/"
+        try:
+            async with session.get(endpoint, timeout=REQUEST_TIMEOUT) as response:
+                if response.status != 200:
+                    _LOGGER.debug("Could not fetch outputs: %s", response.status)
+                    return
+                outs = await response.json(content_type=None)
+        except (ClientError, TimeoutError, ValueError) as err:
+            _LOGGER.debug("Could not fetch outputs: %s", err)
+            return
+
+        if not isinstance(outs, list) or not isinstance(data, list):
+            return
+        outputs = {
+            (floor.get("id"), room.get("id")): room.get("ausgang")
+            for floor in outs
+            for room in floor.get("raeume") or []
+        }
+        for floor in data:
+            for room in floor.get("raeume") or []:
+                ausgang = outputs.get((floor.get("id"), room.get("id")))
+                if isinstance(ausgang, dict):
+                    room["ausgang"] = ausgang

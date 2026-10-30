@@ -14,7 +14,11 @@
                 "data": {
                     "api_url": "API URL",
                     "user": "Benutzername",
-                    "password": "Passwort"
+                    "password": "Passwort",
+                    "haus_id": "Haus-ID"
+                },
+                "data_description": {
+                    "haus_id": "Haus-ID des Controme-Systems (meistens 1)."
                 }
             },
             "credentials": {
@@ -22,7 +26,11 @@
                 "description": "Gefunden: {system}. Geben Sie die Zugangsdaten Ihres Controme Systems ein. Die Zugangsdaten werden erst beim Setzen einer Temperatur geprüft.",
                 "data": {
                     "user": "Benutzername",
-                    "password": "Passwort"
+                    "password": "Passwort",
+                    "haus_id": "Haus-ID"
+                },
+                "data_description": {
+                    "haus_id": "Haus-ID des Controme-Systems (meistens 1)."
                 }
             },
             "select_system": {
@@ -31,7 +39,11 @@
                 "data": {
                     "api_url": "Controme System",
                     "user": "Benutzername",
-                    "password": "Passwort"
+                    "password": "Passwort",
+                    "haus_id": "Haus-ID"
+                },
+                "data_description": {
+                    "haus_id": "Haus-ID des Controme-Systems (meistens 1)."
                 }
             }
         },

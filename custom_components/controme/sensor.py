@@ -17,7 +17,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
 from .coordinator import ContromeConfigEntry
-from .helpers import find_room, iter_rooms, to_float
+from .helpers import find_room, is_return_sensor, iter_rooms, to_float
 from .const import (
     DOMAIN,
     CONF_HAUS_ID,
@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, asy
 
         # Process return temperature sensors
         for sensor in room.get("sensoren", []):
-            if "Rücklauf" in sensor.get("beschreibung", ""):
+            if is_return_sensor(sensor.get("beschreibung")):
                 _LOGGER.debug("Adding return sensor %s for room %s", 
                             sensor.get("name"), room_name)
                 sensors.append(

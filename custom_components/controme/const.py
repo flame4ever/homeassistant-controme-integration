@@ -11,6 +11,9 @@ CONF_HAUS_ID: Final = "haus_id"
 CONF_USER: Final = "user"
 CONF_PASSWORD: Final = "password"
 
+# Most Controme systems have a single house with ID 1
+DEFAULT_HAUS_ID: Final = "1"
+
 # Platforms are now defined in __init__.py
 
 # New constants

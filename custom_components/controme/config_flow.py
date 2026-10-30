@@ -11,7 +11,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
 )
-from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD
+from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD, DEFAULT_HAUS_ID
 from .helpers import scan_network
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,6 +32,7 @@ STEP_INIT_DATA_SCHEMA = vol.Schema({
 STEP_CREDENTIALS_DATA_SCHEMA = vol.Schema({
     vol.Required(CONF_USER): str,
     vol.Required(CONF_PASSWORD): str,
+    vol.Required(CONF_HAUS_ID, default=DEFAULT_HAUS_ID): str,
 })
 
 # Schema for manual entry
@@ -39,6 +40,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Required(CONF_API_URL): str,
     vol.Required(CONF_USER): str,
     vol.Required(CONF_PASSWORD): str,
+    vol.Required(CONF_HAUS_ID, default=DEFAULT_HAUS_ID): str,
 })
 
 class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -126,6 +128,7 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     }),
                     vol.Required(CONF_USER): str,
                     vol.Required(CONF_PASSWORD): str,
+                    vol.Required(CONF_HAUS_ID, default=DEFAULT_HAUS_ID): str,
                 }),
                 errors=errors
             )
@@ -181,17 +184,21 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not base_url.startswith(("http://", "https://")):
             base_url = f"http://{base_url}"
         base_url = base_url.rstrip('/')
+        haus_id = str(user_input.get(CONF_HAUS_ID, DEFAULT_HAUS_ID)).strip()
 
-        # Prevent setting up the same Controme system twice
+        # Prevent setting up the same house of a Controme system twice
         for entry in self._async_current_entries():
-            if entry.data.get(CONF_API_URL, "").rstrip('/').lower() == base_url.lower():
+            if (
+                entry.data.get(CONF_API_URL, "").rstrip('/').lower() == base_url.lower()
+                and str(entry.data.get(CONF_HAUS_ID, DEFAULT_HAUS_ID)) == haus_id
+            ):
                 return self.async_abort(reason="already_configured")
 
         try:
             # Test connection with the provided data. The read API does not require
             # authentication, so this only verifies that the system is reachable.
             session = async_get_clientsession(self.hass)
-            url = f"{base_url}/get/json/v1/1/temps/"
+            url = f"{base_url}/get/json/v1/{haus_id}/temps/"
 
             async with session.get(url, timeout=REQUEST_TIMEOUT) as response:
                 if response.status != 200:
@@ -208,7 +215,7 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 CONF_API_URL: base_url,
                                 CONF_USER: user_input[CONF_USER],
                                 CONF_PASSWORD: user_input[CONF_PASSWORD],
-                                CONF_HAUS_ID: "1"  # Default house ID
+                                CONF_HAUS_ID: haus_id
                             }
                         )
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:

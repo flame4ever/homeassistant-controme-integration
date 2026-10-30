@@ -4,11 +4,15 @@
 
 ### Bug Fixes
 - **Offset Sensors**: Values of 0 and negative values (e.g. total offset) no longer mark the sensor as unavailable
-- **Entity IDs**: Room names with umlauts or special characters (e.g. "Küche", "Bad/WC") now produce valid entity IDs
+- **Entity IDs**: Room names with umlauts or special characters (e.g. "Küche", "WC & Flur") now produce valid entity IDs (#25)
 - **Rooms Without ID**: Fixed a crash during setup when a room has no ID
 - **Floor as Room**: Entities created from floors without rooms now receive updates
 - **Removed Rooms**: Entities become unavailable when their room disappears from the API data
-- **Climate HVAC Mode**: Removed the non-functional "Off" mode; the mode is always "Heat" instead of an invalid state
+- **Climate HVAC Mode**: The HVAC mode follows the Controme operation mode (heating, cooling, off) instead of always showing "Heat"; the non-functional "Off" option is gone (#10, #22)
+- **Climate HVAC Action**: Climate entities show whether a room is actively heating or idle, based on the room's outputs from `/outs/` (#10)
+- **Return Sensors Not Found**: Return sensors described as "... RL" or "Return ..." are detected, not only "Rücklauf" (#5, #13)
+- **Haus ID**: The house ID can be entered during setup (default 1) instead of being hard coded (#9)
+- **Renaming Entities**: Renaming an entity, assigning an area or enabling/disabling it no longer leaves it without a state (#23)
 - **Set Temperature Errors**: Failures (wrong credentials, connection errors) are now shown in the UI, and the request has a timeout
 - **Return Sensors**: Return temperatures are reported as numbers
 - **Config Flow**: The same Controme system can no longer be added twice; the connection test uses Home Assistant's HTTP session and no longer sends misleading Basic Auth

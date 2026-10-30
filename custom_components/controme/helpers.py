@@ -1,5 +1,6 @@
 """Helper functions for Controme integration."""
 import asyncio
+import re
 import logging
 from typing import List, Dict, Any, Optional
 import socket
@@ -31,6 +32,16 @@ def find_room(data: Optional[List[Dict[str, Any]]], floor_id: Any, room_id: Any)
 def is_synthetic_room(data: Optional[List[Dict[str, Any]]], room: Dict[str, Any]) -> bool:
     """Return True if the room has no own room ID (room-less floor or room without ID)."""
     return room.get("id") is None or any(floor is room for floor in data or [])
+
+# Return sensors are described e.g. as "Rücklauf Bad", "Galerie RL" or "Return Kitchen"
+def is_return_sensor(description: Optional[str]) -> bool:
+    """Return True if a sensor description names a return flow (Rücklauf) sensor."""
+    if not description:
+        return False
+    # The abbreviation "RL" is only matched as a separate word in capitals
+    if re.search(r"\bRL\b", description):
+        return True
+    return re.search(r"rücklauf|\breturn\b", description, re.IGNORECASE) is not None
 
 def to_float(value: Any) -> Optional[float]:
     """Convert an API value to float, returning None for missing or non-numeric values."""

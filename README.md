@@ -69,7 +69,8 @@ For each room, the integration creates:
 - Controme heating system with API access
 
 ## Known Limitations
-- Several Controme systems with the same haus_id are not supported. The integration always uses haus_id 1, and the IDs of devices and entities are built from haus_id, floor and room, so a second system would collide with the first one.
+- Several Controme systems with the same haus_id are not supported. The IDs of devices and entities are built from haus_id, floor and room, so a second system with the same haus_id would collide with the first one. The haus_id (usually 1, sometimes 2) is entered during setup.
+- The HVAC mode of the climate entities shows the Controme operation mode but cannot be switched from Home Assistant.
 - Floors without rooms and rooms without their own ID are shown, but their target temperature cannot be set.
 
 ## Support
