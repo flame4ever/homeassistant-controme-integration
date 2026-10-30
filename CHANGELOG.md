@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2.0.0 (2026-10-30)
+
+> **Breaking:** Home Assistant 2026.8.0 or newer is required. Entity IDs and unique IDs stay the same, but some display names change and climate entities now show the Controme operation mode and heating activity.
 
 ### Bug Fixes
 - **Offset Sensors**: Values of 0 and negative values (e.g. total offset) no longer mark the sensor as unavailable
