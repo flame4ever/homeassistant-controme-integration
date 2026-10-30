@@ -1,7 +1,5 @@
 """Support for Controme sensors."""
 import logging
-from typing import Any
-from datetime import timedelta
 
 from homeassistant.components.sensor import (
     SensorEntity,
@@ -15,17 +13,13 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from aiohttp import ClientTimeout
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
 from .coordinator import ContromeConfigEntry
 from .helpers import find_room, iter_rooms, to_float
 from .const import (
-    DOMAIN, 
-    CONF_API_URL, 
+    DOMAIN,
     CONF_HAUS_ID,
     ENTITY_ID_MAP,
     VALUE_MAP,
@@ -35,8 +29,8 @@ from .const import (
 from dataclasses import dataclass
 
 _LOGGER = logging.getLogger(__name__)
-SCAN_INTERVAL = timedelta(seconds=60)
-REQUEST_TIMEOUT = ClientTimeout(total=10)  # 10 Sekunden Timeout
+# Sensors only read coordinator data, so updates need no limit
+PARALLEL_UPDATES = 0
 
 @dataclass
 class ContromeSensorEntityDescription(SensorEntityDescription):
@@ -87,8 +81,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, asy
     data = coordinator.data
     house_id = entry.data[CONF_HAUS_ID]
 
-    _LOGGER.debug("Setting up Controme sensors with data: %s", data)
-
     if not data:
         _LOGGER.error("No data received from coordinator")
         return
@@ -96,7 +88,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, asy
     # Process all floors and rooms
     for floor_id, room_id, room in iter_rooms(data):
         room_name = room.get("name") or f"Room {room_id}"
-        _LOGGER.debug("Processing room %s with data: %s", room_name, room)
+        _LOGGER.debug("Processing room %s", room_name)
 
         # Add room data
         room["floor_id"] = floor_id
@@ -115,7 +107,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, asy
                         sensor_type, data_key, data_key in room)
             if data_key in room:
                 _LOGGER.debug("Adding %s sensor for room %s", sensor_type, room_name)
-                if sensor_type == "operation_mode":
+                if sensor_type == SENSOR_TYPE_OPERATION_MODE:
                     sensor_class = ContromeOperationModeSensor
                 else:
                     sensor_class = ContromeSensor
@@ -175,14 +167,11 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
                     sensor_type, room_data.get("name"))
         
         # Set basic attributes
-        self._config_entry = config_entry
         self._device_info = device_info
-        self._room_data = room_data
         self._sensor_type = sensor_type
         self._room_id = room_data.get("room_id", room_data.get("id"))
         self._floor_id = room_data.get("floor_id")
         self._house_id = config_entry.data[CONF_HAUS_ID]
-        self._base_url = config_entry.data[CONF_API_URL].rstrip('/')
         
         # Set unique ID and entity ID
         self._attr_unique_id = f"{self._house_id}_{self._floor_id}_{self._room_id}_{sensor_type}"
@@ -262,9 +251,7 @@ class ContromeOperationModeSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator, config_entry, room_data, sensor_type, device_info):
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._config_entry = config_entry
         self._device_info = device_info
-        self._room_data = room_data
         self._room_id = room_data.get("room_id", room_data.get("id"))
         self._floor_id = room_data.get("floor_id")
         self._house_id = config_entry.data[CONF_HAUS_ID]

@@ -1,7 +1,6 @@
 """Constants for the Controme integration."""
 
 from typing import Final
-from homeassistant.const import Platform
 
 # Integration domain
 DOMAIN: Final = "controme"

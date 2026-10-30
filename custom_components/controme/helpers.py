@@ -1,10 +1,10 @@
 """Helper functions for Controme integration."""
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional
 import socket
 import aiohttp
-from ipaddress import IPv4Network, IPv4Address, IPv4Interface
+from ipaddress import IPv4Network, IPv4Interface
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,6 +27,10 @@ def find_room(data: Optional[List[Dict[str, Any]]], floor_id: Any, room_id: Any)
         if current_floor_id == floor_id and current_room_id == room_id:
             return room
     return None
+
+def is_synthetic_room(data: Optional[List[Dict[str, Any]]], room: Dict[str, Any]) -> bool:
+    """Return True if the room has no own room ID (room-less floor or room without ID)."""
+    return room.get("id") is None or any(floor is room for floor in data or [])
 
 def to_float(value: Any) -> Optional[float]:
     """Convert an API value to float, returning None for missing or non-numeric values."""
