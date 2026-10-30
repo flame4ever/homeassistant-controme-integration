@@ -2,10 +2,34 @@
     "config": {
         "step": {
             "user": {
+                "title": "Controme Einrichtung",
+                "description": "Wählen Sie, wie Ihr Controme System gefunden werden soll.",
+                "data": {
+                    "discovery_method": "Einrichtungsart"
+                }
+            },
+            "manual_entry": {
                 "title": "Controme Verbindung",
-                "description": "Geben Sie die Verbindungsdaten für Ihr Controme System ein",
+                "description": "Geben Sie die Adresse und die Zugangsdaten Ihres Controme Systems ein. Die Zugangsdaten werden erst beim Setzen einer Temperatur geprüft.",
                 "data": {
                     "api_url": "API URL",
+                    "user": "Benutzername",
+                    "password": "Passwort"
+                }
+            },
+            "credentials": {
+                "title": "Controme Zugangsdaten",
+                "description": "Gefunden: {system}. Geben Sie die Zugangsdaten Ihres Controme Systems ein. Die Zugangsdaten werden erst beim Setzen einer Temperatur geprüft.",
+                "data": {
+                    "user": "Benutzername",
+                    "password": "Passwort"
+                }
+            },
+            "select_system": {
+                "title": "Controme System auswählen",
+                "description": "Es wurden {count} Controme Systeme gefunden. Wählen Sie eines aus und geben Sie die Zugangsdaten ein. Die Zugangsdaten werden erst beim Setzen einer Temperatur geprüft.",
+                "data": {
+                    "api_url": "Controme System",
                     "user": "Benutzername",
                     "password": "Passwort"
                 }
@@ -13,11 +37,18 @@
         },
         "error": {
             "cannot_connect": "Verbindung fehlgeschlagen",
-            "invalid_auth": "Ungültige Authentifizierung",
-            "unknown": "Unerwarteter Fehler"
+            "no_systems_found": "Es wurde kein Controme System automatisch gefunden. Bitte geben Sie die Daten manuell ein."
         },
         "abort": {
             "already_configured": "Gerät ist bereits konfiguriert"
+        }
+    },
+    "selector": {
+        "discovery_method": {
+            "options": {
+                "auto": "Automatisch nach Controme-Systemen im Netzwerk suchen",
+                "manual": "IP-Adresse und Zugangsdaten manuell eingeben"
+            }
         }
     },
     "entity": {
@@ -65,4 +96,4 @@
             }
         }
     }
-} 
+}

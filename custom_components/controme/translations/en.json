@@ -2,29 +2,53 @@
     "config": {
         "step": {
             "user": {
+                "title": "Controme Setup",
+                "description": "Choose how your Controme system should be found.",
+                "data": {
+                    "discovery_method": "Setup method"
+                }
+            },
+            "manual_entry": {
                 "title": "Controme Connection",
-                "description": "Enter the connection details for your Controme system",
+                "description": "Enter the address and the credentials of your Controme system. The credentials are only checked when a temperature is set.",
                 "data": {
                     "api_url": "API URL",
                     "user": "Username",
                     "password": "Password"
                 }
             },
-            "select_house": {
-                "title": "Select House",
-                "description": "Multiple houses found. Please select one:",
+            "credentials": {
+                "title": "Controme Credentials",
+                "description": "Found: {system}. Enter the credentials of your Controme system. The credentials are only checked when a temperature is set.",
                 "data": {
-                    "haus_id": "House ID"
+                    "user": "Username",
+                    "password": "Password"
+                }
+            },
+            "select_system": {
+                "title": "Select Controme System",
+                "description": "{count} Controme systems were found. Select one and enter its credentials. The credentials are only checked when a temperature is set.",
+                "data": {
+                    "api_url": "Controme system",
+                    "user": "Username",
+                    "password": "Password"
                 }
             }
         },
         "error": {
             "cannot_connect": "Failed to connect",
-            "invalid_auth": "Invalid authentication",
-            "unknown": "Unexpected error"
+            "no_systems_found": "No Controme system was found automatically. Please enter the details manually."
         },
         "abort": {
             "already_configured": "Device is already configured"
+        }
+    },
+    "selector": {
+        "discovery_method": {
+            "options": {
+                "auto": "Search the network for Controme systems automatically",
+                "manual": "Enter IP address and credentials manually"
+            }
         }
     },
     "entity": {
@@ -72,4 +96,4 @@
             }
         }
     }
-} 
+}
