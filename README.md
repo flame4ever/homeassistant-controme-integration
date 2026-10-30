@@ -34,10 +34,13 @@ Home Assistant integration for Controme heating systems. This integration allows
 1. Go to Settings -> Devices & Services
 2. Click "Add Integration"
 3. Search for "Controme"
-4. Enter your Controme API details:
+4. Choose whether the integration should search your network for the Controme system or whether you enter it manually
+5. Enter your Controme API details:
    - API URL (e.g., http://192.168.1.100/)
    - Username
    - Password
+
+**Note on credentials:** During setup the integration only checks that the Controme system is reachable (the read API needs no login). Username and password are only checked when a target temperature is set. If they are wrong, setting a temperature fails with an authentication error.
 
 ## Entities Created
 
@@ -62,8 +65,12 @@ For each room, the integration creates:
 - German (Deutsch)
 
 ## Requirements
-- Home Assistant 2024.1.0 or newer
+- Home Assistant 2026.8.0 or newer
 - Controme heating system with API access
+
+## Known Limitations
+- Several Controme systems with the same haus_id are not supported. The integration always uses haus_id 1, and the IDs of devices and entities are built from haus_id, floor and room, so a second system would collide with the first one.
+- Floors without rooms and rooms without their own ID are shown, but their target temperature cannot be set.
 
 ## Support
 

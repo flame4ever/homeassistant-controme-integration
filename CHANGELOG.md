@@ -12,6 +12,23 @@
 - **Set Temperature Errors**: Failures (wrong credentials, connection errors) are now shown in the UI, and the request has a timeout
 - **Return Sensors**: Return temperatures are reported as numbers
 - **Config Flow**: The same Controme system can no longer be added twice; the connection test uses Home Assistant's HTTP session and no longer sends misleading Basic Auth
+- **Availability**: Entities now really become unavailable when their room disappears or a value is missing or not numeric. Before, the coordinator entity ignored this and only reflected the last update.
+- **Config Flow Errors**: Errors are shown on the step where they occurred (credentials, system selection, manual entry) instead of the system selection step
+- **Set Temperature on Floors**: Floors without rooms and rooms without their own ID now reject setting a temperature with a clear error instead of sending it to a wrong room ID
+- **Coordinator**: Responses without JSON content type are parsed; connection errors are reported once by the coordinator instead of being logged twice
+
+### Changes
+- **Entity Names**: Sensor names now come from the translations instead of hard coded German texts. English installations show English names. Return temperature sensors include their sensor name, so several return sensors in one room can be told apart. Climate entities take the name of their room device. Entity IDs and unique IDs are unchanged.
+- **Config Flow**: All steps (user, manual entry, credentials, system selection) and the discovery method options are translated in English and German. The descriptions point out that credentials are only checked when a temperature is set.
+- **Requirements**: Home Assistant 2026.8.0 or newer is required (via_device_id for devices)
+- **Documentation**: README lists the limitation that several Controme systems with the same haus_id are not supported
+
+### Under the Hood
+- Coordinator stored in `entry.runtime_data` instead of `hass.data`; config entry passed to the coordinator
+- Room devices link to the hub device via `via_device_id` (the `via_device` tuple is deprecated in Home Assistant 2026.8)
+- `asyncio.timeout` instead of `async_timeout`, `ConfigFlowResult` instead of `FlowResult`
+- `PARALLEL_UPDATES` set for sensors (0) and climate (1)
+- Removed dead code (unused house selection step, progress step handler, hub device info), unused imports and the wrong `loggers` entry in the manifest
 
 ## 1.1.2 (2025-03-19)
 
