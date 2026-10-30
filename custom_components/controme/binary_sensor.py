@@ -18,6 +18,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, asy
 class ContromeTransmissionProblemBinarySensor(ContromeTransmissionEntity, BinarySensorEntity):
     """On if at least one Controme sensor has not transmitted within the threshold."""
 
+    _platform_domain = "binary_sensor"
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     # The list changes often and can be long, keep it out of the recorder database
     _unrecorded_attributes = frozenset({"stale_sensors"})

@@ -63,9 +63,9 @@ For each room, the integration creates:
 
 ### Transmission Monitoring (hub device)
 The Controme hub device gets three diagnostic entities, based on the "last transmission" time Controme reports for every sensor:
-- **Last transmission** (timestamp): the newest transmission of all sensors
-- **Stale sensors** (number): sensors whose last transmission is older than the threshold
-- **Transmission problem** (binary sensor, problem): on if at least one sensor is stale. The attributes `threshold_minutes` and `stale_sensors` list up to 20 stale sensors (oldest first) with room, description, name and last transmission.
+- **Last transmission** (`sensor.controme_last_transmission`, timestamp): the newest transmission of all sensors
+- **Stale sensors** (`sensor.controme_stale_sensors`, number): sensors whose last transmission is older than the threshold
+- **Transmission problem** (`binary_sensor.controme_transmission_problem`, problem): on if at least one sensor is stale. The attributes `threshold_minutes` and `stale_sensors` list up to 20 stale sensors (oldest first) with room, description, name and last transmission.
 
 The values are recalculated every minute, so a sensor keeps aging and the problem flag turns on even while the Controme system cannot be reached. Sensors without a readable timestamp never count as stale.
 

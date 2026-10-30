@@ -316,6 +316,7 @@ class ContromeOperationModeSensor(CoordinatorEntity, SensorEntity):
 class ContromeLastTransmissionSensor(ContromeTransmissionEntity, SensorEntity):
     """Newest last transmission of all Controme sensors."""
 
+    _platform_domain = "sensor"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
 
     def __init__(self, coordinator, config_entry):
@@ -330,6 +331,7 @@ class ContromeLastTransmissionSensor(ContromeTransmissionEntity, SensorEntity):
 class ContromeStaleSensorsSensor(ContromeTransmissionEntity, SensorEntity):
     """Number of Controme sensors whose last transmission is older than the threshold."""
 
+    _platform_domain = "sensor"
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(self, coordinator, config_entry):

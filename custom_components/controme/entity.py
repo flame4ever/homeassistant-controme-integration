@@ -20,12 +20,16 @@ class ContromeTransmissionEntity(CoordinatorEntity):
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    # Entity platform of the subclass ("sensor" or "binary_sensor"), used for the entity ID
+    _platform_domain: str
 
     def __init__(self, coordinator, config_entry, key: str) -> None:
         """Initialize the entity on the existing hub device (DOMAIN, haus_id)."""
         super().__init__(coordinator)
         house_id = config_entry.data[CONF_HAUS_ID]
         self._attr_unique_id = f"{house_id}_{key}"
+        # Fixed, language independent entity ID like the other Controme entities
+        self.entity_id = f"{self._platform_domain}.controme_{key}"
         self._attr_translation_key = key
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, house_id)})
         self._threshold_minutes = int(
