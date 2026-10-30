@@ -13,6 +13,8 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 REQUEST_TIMEOUT = ClientTimeout(total=10)
+# The outputs are optional, so an unreachable /outs/ delays the update by at most 5 s
+OUTS_REQUEST_TIMEOUT = ClientTimeout(total=5)
 
 type ContromeConfigEntry = ConfigEntry["ContromeDataUpdateCoordinator"]
 
@@ -80,7 +82,7 @@ class ContromeDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         """
         endpoint = f"{self._base_url}/get/json/v1/{self._house_id}/outs/"
         try:
-            async with session.get(endpoint, timeout=REQUEST_TIMEOUT) as response:
+            async with session.get(endpoint, timeout=OUTS_REQUEST_TIMEOUT) as response:
                 if response.status != 200:
                     _LOGGER.debug("Could not fetch outputs: %s", response.status)
                     return

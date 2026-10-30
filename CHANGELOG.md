@@ -11,7 +11,7 @@
 - **Floor as Room**: Entities created from floors without rooms now receive updates
 - **Removed Rooms**: Entities become unavailable when their room disappears from the API data
 - **Climate HVAC Mode**: The HVAC mode follows the Controme operation mode (heating, cooling, off) instead of always showing "Heat"; the non-functional "Off" option is gone (#10, #22). Integer values (also as digit strings) are mapped as 0 = off, 1 = cooling, 2 = heating; this mapping comes from issue #22 and is not documented by Controme. Boolean and unknown values fall back to heating.
-- **Climate HVAC Action**: Climate entities show whether a room is actively heating or idle, based on the room's outputs from `/outs/` (#10). Malformed `/outs/` data is skipped and never makes the update fail.
+- **Climate HVAC Action**: Climate entities show whether a room is actively heating or idle, based on the room's outputs from `/outs/` (#10). Malformed `/outs/` data is skipped and never makes the update fail. `/outs/` has its own 5 second timeout, the main update keeps 10 seconds.
 - **Return Sensors Not Found**: Return sensors described as "... RL" or "Return ..." are detected, not only "Rücklauf" (#5, #13)
 - **Haus ID**: The house ID can be entered during setup (default 1) instead of being hard coded (#9). Only digits are accepted, leading zeros are removed ("01" is stored as "1"), and the duplicate check compares the normalized IDs. Existing entries are not migrated.
 - **Renaming Entities**: Renaming an entity, assigning an area or enabling/disabling it no longer leaves it without a state (#23)
