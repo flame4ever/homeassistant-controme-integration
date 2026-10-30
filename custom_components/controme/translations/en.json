@@ -49,6 +49,7 @@
         },
         "error": {
             "cannot_connect": "Failed to connect",
+            "invalid_haus_id": "The house ID may only contain digits (e.g. 1).",
             "no_systems_found": "No Controme system was found automatically. Please enter the details manually."
         },
         "abort": {

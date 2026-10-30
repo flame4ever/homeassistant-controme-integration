@@ -49,6 +49,7 @@
         },
         "error": {
             "cannot_connect": "Verbindung fehlgeschlagen",
+            "invalid_haus_id": "Die Haus-ID darf nur aus Ziffern bestehen (z. B. 1).",
             "no_systems_found": "Es wurde kein Controme System automatisch gefunden. Bitte geben Sie die Daten manuell ein."
         },
         "abort": {

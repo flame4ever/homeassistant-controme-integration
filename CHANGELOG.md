@@ -13,7 +13,7 @@
 - **Climate HVAC Mode**: The HVAC mode follows the Controme operation mode (heating, cooling, off) instead of always showing "Heat"; the non-functional "Off" option is gone (#10, #22)
 - **Climate HVAC Action**: Climate entities show whether a room is actively heating or idle, based on the room's outputs from `/outs/` (#10)
 - **Return Sensors Not Found**: Return sensors described as "... RL" or "Return ..." are detected, not only "Rücklauf" (#5, #13)
-- **Haus ID**: The house ID can be entered during setup (default 1) instead of being hard coded (#9)
+- **Haus ID**: The house ID can be entered during setup (default 1) instead of being hard coded (#9). Only digits are accepted, leading zeros are removed ("01" is stored as "1"), and the duplicate check compares the normalized IDs. Existing entries are not migrated.
 - **Renaming Entities**: Renaming an entity, assigning an area or enabling/disabling it no longer leaves it without a state (#23)
 - **Set Temperature Errors**: Failures (wrong credentials, connection errors) are now shown in the UI, and the request has a timeout
 - **Return Sensors**: Return temperatures are reported as numbers

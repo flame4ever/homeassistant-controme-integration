@@ -43,6 +43,14 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Required(CONF_HAUS_ID, default=DEFAULT_HAUS_ID): str,
 })
 
+def normalize_haus_id(value: Any) -> Optional[str]:
+    """Return the house ID without leading zeros ("01" -> "1"), or None if it is not only digits."""
+    haus_id = str(value).strip()
+    # isdigit() alone also accepts e.g. superscripts, which int() rejects
+    if not haus_id.isascii() or not haus_id.isdigit():
+        return None
+    return str(int(haus_id))
+
 class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Controme."""
 
@@ -184,13 +192,17 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not base_url.startswith(("http://", "https://")):
             base_url = f"http://{base_url}"
         base_url = base_url.rstrip('/')
-        haus_id = str(user_input.get(CONF_HAUS_ID, DEFAULT_HAUS_ID)).strip()
+        haus_id = normalize_haus_id(user_input.get(CONF_HAUS_ID, DEFAULT_HAUS_ID))
+        if haus_id is None:
+            # Only digits are allowed, show the calling step again
+            return self._show_step_form(step_id, {CONF_HAUS_ID: "invalid_haus_id"})
 
         # Prevent setting up the same house of a Controme system twice
         for entry in self._async_current_entries():
+            stored_haus_id = str(entry.data.get(CONF_HAUS_ID, DEFAULT_HAUS_ID))
             if (
                 entry.data.get(CONF_API_URL, "").rstrip('/').lower() == base_url.lower()
-                and str(entry.data.get(CONF_HAUS_ID, DEFAULT_HAUS_ID)) == haus_id
+                and (normalize_haus_id(stored_haus_id) or stored_haus_id) == haus_id
             ):
                 return self.async_abort(reason="already_configured")
 
