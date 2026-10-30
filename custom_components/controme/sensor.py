@@ -20,7 +20,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from aiohttp import ClientTimeout
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
 from homeassistant.helpers import device_registry as dr
+from homeassistant.util import slugify
 
+from .helpers import find_room, iter_rooms, to_float
 from .const import (
     DOMAIN, 
     CONF_API_URL, 
@@ -100,69 +102,57 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         return
 
     # Process all floors and rooms
-    for floor in data:
-        floor_id = floor.get("id")
-        floor_name = floor.get("etagenname", f"Floor {floor_id}")
-        rooms = floor.get("raeume", [])
-        _LOGGER.debug("Processing floor %s with rooms: %s", floor_id, rooms)
-        
-        if not rooms and ("temperatur" in floor or "solltemperatur" in floor):
-            rooms = [floor]
-            _LOGGER.debug("Using floor as room because no rooms found")
-            
-        for room in rooms:
-            room_id = room.get("id")
-            if not room_id:
-                room_id = f"{floor_id}_{index}"
-            room_name = room.get("name", f"Room {room_id}")
-            _LOGGER.debug("Processing room %s with data: %s", room_name, room)
+    for floor_id, room_id, room in iter_rooms(data):
+        room_name = room.get("name") or f"Room {room_id}"
+        _LOGGER.debug("Processing room %s with data: %s", room_name, room)
 
-            # Add room data
-            room["floor_id"] = floor_id
-            device_info = DeviceInfo(
-                identifiers={(DOMAIN, f"{house_id}_{floor_id}_{room_id}")},
-                name=room_name,
-                manufacturer="Controme",
-                model="Room",
-                via_device=(DOMAIN, house_id),
-            )
+        # Add room data
+        room["floor_id"] = floor_id
+        room["room_id"] = room_id
+        device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{house_id}_{floor_id}_{room_id}")},
+            name=room_name,
+            manufacturer="Controme",
+            model="Room",
+            via_device=(DOMAIN, house_id),
+        )
 
-            # Add basic sensors
-            for sensor_type, data_key in VALUE_MAP.items():
-                _LOGGER.debug("Checking for %s sensor (key: %s) in room data: %s", 
-                            sensor_type, data_key, data_key in room)
-                if data_key in room:
-                    _LOGGER.debug("Adding %s sensor for room %s", sensor_type, room_name)
-                    if sensor_type == "operation_mode":
-                        sensor_class = ContromeOperationModeSensor
-                    else:
-                        sensor_class = ContromeSensor
-                    sensors.append(
-                        sensor_class(
-                            coordinator,
-                            entry,
-                            room,
-                            sensor_type,
-                            device_info,
-                        )
+        # Add basic sensors
+        for sensor_type, data_key in VALUE_MAP.items():
+            _LOGGER.debug("Checking for %s sensor (key: %s) in room data: %s", 
+                        sensor_type, data_key, data_key in room)
+            if data_key in room:
+                _LOGGER.debug("Adding %s sensor for room %s", sensor_type, room_name)
+                if sensor_type == "operation_mode":
+                    sensor_class = ContromeOperationModeSensor
+                else:
+                    sensor_class = ContromeSensor
+                sensors.append(
+                    sensor_class(
+                        coordinator,
+                        entry,
+                        room,
+                        sensor_type,
+                        device_info,
                     )
-                    _LOGGER.debug("%s sensor added", sensor_type)
+                )
+                _LOGGER.debug("%s sensor added", sensor_type)
 
-            # Process return temperature sensors
-            for sensor in room.get("sensoren", []):
-                if "Rücklauf" in sensor.get("beschreibung", ""):
-                    _LOGGER.debug("Adding return sensor %s for room %s", 
-                                sensor.get("name"), room_name)
-                    sensors.append(
-                        ContromeSensor(
-                            coordinator,
-                            entry,
-                            room,
-                            f"return_{sensor.get('name')}",
-                            device_info,
-                        )
+        # Process return temperature sensors
+        for sensor in room.get("sensoren", []):
+            if "Rücklauf" in sensor.get("beschreibung", ""):
+                _LOGGER.debug("Adding return sensor %s for room %s", 
+                            sensor.get("name"), room_name)
+                sensors.append(
+                    ContromeSensor(
+                        coordinator,
+                        entry,
+                        room,
+                        f"return_{sensor.get('name')}",
+                        device_info,
                     )
-                    _LOGGER.debug("Return sensor added")
+                )
+                _LOGGER.debug("Return sensor added")
 
     _LOGGER.debug("Created %d sensors in total", len(sensors))
     async_add_entities(sensors)
@@ -174,7 +164,7 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
 
     def __init_sensor_description(self, sensor_type: str) -> None:
         """Initialize the sensor description based on type."""
-        base_type = sensor_type.split("_")[0]
+        base_type = "return" if sensor_type.startswith("return_") else sensor_type
         self.entity_description = next(
             (desc for desc in SENSOR_TYPES if desc.key == base_type),
             SENSOR_TYPES[0]  # Fallback to temperature sensor
@@ -182,7 +172,7 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
 
     def __init_entity_id(self, sensor_type: str, room_name: str) -> None:
         """Initialize the entity ID."""
-        room_name_lower = room_name.lower().replace(" ", "_")
+        room_name_lower = slugify(room_name)
         suffix = "return" if sensor_type.startswith("return_") else ENTITY_ID_MAP.get(sensor_type, sensor_type)
         self.entity_id = f"sensor.controme_{room_name_lower}_{suffix}"
 
@@ -211,7 +201,7 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
         self._device_info = device_info
         self._room_data = room_data
         self._sensor_type = sensor_type
-        self._room_id = room_data.get("id")
+        self._room_id = room_data.get("room_id", room_data.get("id"))
         self._floor_id = room_data.get("floor_id")
         self._house_id = config_entry.data[CONF_HAUS_ID]
         self._base_url = config_entry.data[CONF_API_URL].rstrip('/')
@@ -219,7 +209,7 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
         # Set unique ID and entity ID
         self._attr_unique_id = f"{self._house_id}_{self._floor_id}_{self._room_id}_{sensor_type}"
         self.__init_sensor_description(sensor_type)
-        self.__init_entity_id(sensor_type, room_data.get("name", ""))
+        self.__init_entity_id(sensor_type, room_data.get("name") or f"room_{self._room_id}")
         self.__init_name(sensor_type)
         
         # Set initial values
@@ -242,12 +232,11 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        for floor in self.coordinator.data:
-            if floor["id"] == self._floor_id:
-                for room in floor.get("raeume", []):
-                    if room["id"] == self._room_id:
-                        self._update_from_data(room)
-                        break
+        room = find_room(self.coordinator.data, self._floor_id, self._room_id)
+        if room is None:
+            self._attr_available = False
+        else:
+            self._update_from_data(room)
         self.async_write_ha_state()
 
     def _update_from_data(self, room_data):
@@ -256,14 +245,10 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
             for sensor in room_data.get("sensoren", []):
                 sensor_id = "_".join(self._sensor_type.split("_")[1:])
                 if sensor.get("name") == sensor_id:
-                    value = sensor.get("wert")
-                    # Handle non-numeric values for numeric sensors
-                    if isinstance(value, str) and not value.replace('.', '', 1).isdigit():
-                        self._attr_native_value = None
-                        self._attr_available = False
-                    else:
-                        self._attr_native_value = value
-                        self._attr_available = True
+                    value = to_float(sensor.get("wert"))
+                    # Non-numeric values like "kein Sensor vorhanden" mark the sensor unavailable
+                    self._attr_native_value = value
+                    self._attr_available = value is not None
                     break
         else:
             value = room_data.get(VALUE_MAP.get(self._sensor_type))
@@ -272,16 +257,10 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
                 SensorDeviceClass.TEMPERATURE, 
                 SensorDeviceClass.HUMIDITY
             ]:
-                if not value or (isinstance(value, str) and not value.replace('.', '', 1).isdigit()):
-                    self._attr_native_value = None
-                    self._attr_available = False
-                else:
-                    try:
-                        self._attr_native_value = float(value) if value is not None else None
-                        self._attr_available = True
-                    except (ValueError, TypeError):
-                        self._attr_native_value = None
-                        self._attr_available = False
+                # 0 and negative values (e.g. offsets) are valid readings
+                value = to_float(value)
+                self._attr_native_value = value
+                self._attr_available = value is not None
             else:
                 self._attr_native_value = value
                 self._attr_available = value is not None
@@ -297,14 +276,14 @@ class ContromeOperationModeSensor(CoordinatorEntity, SensorEntity):
         self._config_entry = config_entry
         self._device_info = device_info
         self._room_data = room_data
-        self._room_id = room_data.get("id")
+        self._room_id = room_data.get("room_id", room_data.get("id"))
         self._floor_id = room_data.get("floor_id")
         self._house_id = config_entry.data[CONF_HAUS_ID]
         
         # Set unique ID and entity ID
         self._attr_unique_id = f"{self._house_id}_{self._floor_id}_{self._room_id}_operation_mode"
-        room_name = room_data.get("name", "")
-        room_name_lower = room_name.lower().replace(" ", "_")
+        room_name = room_data.get("name") or f"room_{self._room_id}"
+        room_name_lower = slugify(room_name)
         self.entity_id = f"sensor.controme_{room_name_lower}_mode"
 
         # Set entity description
@@ -331,17 +310,11 @@ class ContromeOperationModeSensor(CoordinatorEntity, SensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        updated = False
-        for floor in self.coordinator.data:
-            if floor["id"] == self._floor_id:
-                for room in floor.get("raeume", []):
-                    if room["id"] == self._room_id:
-                        self._update_from_data(room)
-                        updated = True
-                        break
-                if updated:
-                    break
-        
+        room = find_room(self.coordinator.data, self._floor_id, self._room_id)
+        if room is None:
+            self._attr_available = False
+        else:
+            self._update_from_data(room)
         self.async_write_ha_state()
         
     def _update_from_data(self, room_data):

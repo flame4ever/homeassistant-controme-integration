@@ -15,11 +15,14 @@ from homeassistant.const import (
     PERCENTAGE,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from aiohttp import ClientTimeout
+from aiohttp import ClientError, ClientTimeout
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
+from homeassistant.util import slugify
 
+from .helpers import find_room, iter_rooms, to_float
 from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,37 +38,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     house_id = entry.data[CONF_HAUS_ID]
 
     # Process all floors and rooms
-    for floor in data:
-        floor_id = floor.get("id")
-        floor_name = floor.get("etagenname", f"Floor {floor_id}")
-        rooms = floor.get("raeume", [])
-        
-        if not rooms and ("temperatur" in floor or "solltemperatur" in floor):
-            rooms = [floor]
-            
-        for room in rooms:
-            room_id = room.get("id")
-            if not room_id:
-                room_id = f"{floor_id}_{index}"
-            room_name = room.get("name", f"Room {room_id}")
-            room["floor_id"] = floor_id
+    for floor_id, room_id, room in iter_rooms(data):
+        room_name = room.get("name") or f"Room {room_id}"
+        room["floor_id"] = floor_id
+        room["room_id"] = room_id
 
-            device_info = DeviceInfo(
-                identifiers={(DOMAIN, f"{house_id}_{floor_id}_{room_id}")},
-                name=room_name,
-                manufacturer="Controme",
-                model="Thermostat API",
-                via_device=(DOMAIN, f"{house_id}"),
-            )
+        device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{house_id}_{floor_id}_{room_id}")},
+            name=room_name,
+            manufacturer="Controme",
+            model="Thermostat API",
+            via_device=(DOMAIN, f"{house_id}"),
+        )
 
-            climate_devices.append(
-                ContromeClimate(
-                    coordinator,
-                    entry,
-                    room,
-                    device_info,
-                )
+        climate_devices.append(
+            ContromeClimate(
+                coordinator,
+                entry,
+                room,
+                device_info,
             )
+        )
 
     async_add_entities(climate_devices)
 
@@ -83,14 +76,14 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         self._base_url = config_entry.data[CONF_API_URL].rstrip('/')
         self._device_info = device_info
         self._room_data = room_data
-        self._attr_name = room_data.get("name")
-        self._room_id = room_data.get("id")
+        self._room_id = room_data.get("room_id", room_data.get("id"))
+        self._attr_name = room_data.get("name") or f"Room {self._room_id}"
         self._floor_id = room_data.get("floor_id")
         self._house_id = config_entry.data[CONF_HAUS_ID]
         self._user = config_entry.data[CONF_USER]
         self._password = config_entry.data[CONF_PASSWORD]
         self._attr_unique_id = f"{config_entry.data[CONF_HAUS_ID]}_{self._floor_id}_{self._room_id}_climate"
-        self.entity_id = f"climate.controme_{self._attr_name.lower().replace(' ', '_')}"
+        self.entity_id = f"climate.controme_{slugify(self._attr_name)}"
         self._update_from_data(room_data)
 
         # Set supported features
@@ -104,28 +97,25 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         self._attr_max_temp = 30
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         
-        # Set HVAC modes
-        self._attr_hvac_modes = [
-            HVACMode.HEAT,
-            HVACMode.OFF,
-        ]
+        # Switching rooms off is not implemented, so only heating is offered
+        self._attr_hvac_modes = [HVACMode.HEAT]
+        self._attr_hvac_mode = HVACMode.HEAT
 
     def _update_from_data(self, data):
         """Update attrs from data."""
-        self._attr_current_temperature = data.get("temperatur")
-        self._attr_target_temperature = data.get("solltemperatur")
-        self._attr_hvac_mode = HVACMode.HEAT if data.get("betriebsart") == "Heating" else None
-        self._attr_current_humidity = data.get("luftfeuchte")
+        self._attr_current_temperature = to_float(data.get("temperatur"))
+        self._attr_target_temperature = to_float(data.get("solltemperatur"))
+        self._attr_current_humidity = to_float(data.get("luftfeuchte"))
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        for floor in self.coordinator.data:
-            if floor["id"] == self._floor_id:
-                for room in floor.get("raeume", []):
-                    if room["id"] == self._room_id:
-                        self._update_from_data(room)
-                        break
+        room = find_room(self.coordinator.data, self._floor_id, self._room_id)
+        if room is None:
+            self._attr_available = False
+        else:
+            self._attr_available = True
+            self._update_from_data(room)
         self.async_write_ha_state()
 
     @property
@@ -139,6 +129,11 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         return {
             ATTR_HUMIDITY: self._attr_current_humidity
         }
+
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        """Set the HVAC mode; only heating is supported."""
+        if hvac_mode != HVACMode.HEAT:
+            raise HomeAssistantError(f"HVAC mode {hvac_mode} is not supported by Controme")
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
@@ -167,29 +162,29 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
                 headers={
                     'Content-Type': 'application/x-www-form-urlencoded',
                     'Accept': 'application/json'
-                }
+                },
+                timeout=REQUEST_TIMEOUT,
             ) as response:
                 response_text = await response.text()
-                if response.status != 200:
-                    if response.status == 403:
-                        _LOGGER.error("Authentication failed when setting temperature. Check your credentials.")
-                        _LOGGER.debug("Auth failed: URL=%s, User=%s, Response=%s", 
-                                    endpoint, self._user, response_text)
-                    else:
-                        _LOGGER.error("Error setting temperature: status=%s, response=%s", 
-                                    response.status, response_text)
-                    return
-                else:
-                    _LOGGER.debug("Successfully set temperature: %s", response_text)
-                    
-                    # Set local value immediately for responsive UI
-                    self._attr_target_temperature = temperature
-                    self.async_write_ha_state()
-                    
-                    # Request an immediate data refresh to update all entities
-                    _LOGGER.debug("Requesting immediate data refresh after temperature change")
-                    await self.coordinator.async_refresh()
-                    
-        except Exception as ex:
-            _LOGGER.exception("Exception during setting temperature: %s", ex)
-            return
+        except (ClientError, TimeoutError) as ex:
+            raise HomeAssistantError(f"Error communicating with Controme while setting temperature: {ex}") from ex
+
+        if response.status in (401, 403):
+            _LOGGER.debug("Auth failed: URL=%s, User=%s, Response=%s",
+                        endpoint, self._user, response_text)
+            raise HomeAssistantError(
+                "Authentication failed when setting temperature. Check your Controme credentials."
+            )
+        if response.status != 200:
+            raise HomeAssistantError(
+                f"Error setting temperature: status={response.status}, response={response_text}"
+            )
+
+        _LOGGER.debug("Successfully set temperature: %s", response_text)
+
+        # Set local value immediately for responsive UI
+        self._attr_target_temperature = temperature
+        self.async_write_ha_state()
+
+        # Request a data refresh to update all entities
+        await self.coordinator.async_request_refresh()

@@ -9,6 +9,35 @@ from ipaddress import IPv4Network, IPv4Address, IPv4Interface
 
 _LOGGER = logging.getLogger(__name__)
 
+def iter_rooms(data: Optional[List[Dict[str, Any]]]):
+    """Yield (floor_id, room_id, room) for all rooms, using room-less floors as rooms."""
+    for floor in data or []:
+        floor_id = floor.get("id")
+        rooms = floor.get("raeume") or []
+        if not rooms and ("temperatur" in floor or "solltemperatur" in floor):
+            rooms = [floor]
+        for index, room in enumerate(rooms):
+            room_id = room.get("id")
+            if room_id is None:
+                room_id = f"{floor_id}_{index}"
+            yield floor_id, room_id, room
+
+def find_room(data: Optional[List[Dict[str, Any]]], floor_id: Any, room_id: Any) -> Optional[Dict[str, Any]]:
+    """Return the room data for the given floor and room ID, or None if it is gone."""
+    for current_floor_id, current_room_id, room in iter_rooms(data):
+        if current_floor_id == floor_id and current_room_id == room_id:
+            return room
+    return None
+
+def to_float(value: Any) -> Optional[float]:
+    """Convert an API value to float, returning None for missing or non-numeric values."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
 def get_local_ip() -> Optional[str]:
     """Get the local IP address of the machine."""
     try:

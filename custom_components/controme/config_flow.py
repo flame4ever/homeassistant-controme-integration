@@ -7,10 +7,12 @@ import asyncio
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD
 from .helpers import scan_network
 
 _LOGGER = logging.getLogger(__name__)
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 # Schema for the initial choice step - using direct texts for options
 STEP_INIT_DATA_SCHEMA = vol.Schema({
@@ -181,21 +183,28 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Process the user input from either discovery or manual entry."""
         errors = {}
         
+        base_url = user_input[CONF_API_URL].strip()
+        if not base_url.startswith(("http://", "https://")):
+            base_url = f"http://{base_url}"
+        base_url = base_url.rstrip('/')
+
+        # Prevent setting up the same Controme system twice
+        for entry in self._async_current_entries():
+            if entry.data.get(CONF_API_URL, "").rstrip('/').lower() == base_url.lower():
+                return self.async_abort(reason="already_configured")
+
         try:
-            # Test connection with the provided data
-            async with aiohttp.ClientSession() as session:
-                base_url = user_input[CONF_API_URL]
-                if not base_url.startswith(("http://", "https://")):
-                    base_url = f"http://{base_url}"
-                url = f"{base_url.rstrip('/')}/get/json/v1/1/temps/"
-                
-                async with session.get(
-                    url,
-                    auth=aiohttp.BasicAuth(user_input[CONF_USER], user_input[CONF_PASSWORD])
-                ) as response:
-                    if response.status == 401:
-                        errors["base"] = "invalid_auth"
-                    elif response.status != 200:
+            # Test connection with the provided data. The read API does not require
+            # authentication, so this only verifies that the system is reachable.
+            session = async_get_clientsession(self.hass)
+            url = f"{base_url}/get/json/v1/1/temps/"
+
+            async with session.get(url, timeout=REQUEST_TIMEOUT) as response:
+                if response.status != 200:
+                    errors["base"] = "cannot_connect"
+                else:
+                    data = await response.json(content_type=None)
+                    if not isinstance(data, list):
                         errors["base"] = "cannot_connect"
                     else:
                         # Save inputs for later steps
@@ -210,7 +219,7 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 CONF_HAUS_ID: "1"  # Default house ID
                             }
                         )
-        except Exception as err:
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             _LOGGER.error("Error testing connection: %s", err)
             errors["base"] = "cannot_connect"
 
