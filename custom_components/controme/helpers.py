@@ -4,7 +4,6 @@ import logging
 from typing import List, Dict, Any, Optional, Set
 import socket
 import aiohttp
-import async_timeout
 from ipaddress import IPv4Network, IPv4Address, IPv4Interface
 
 _LOGGER = logging.getLogger(__name__)
@@ -72,7 +71,7 @@ async def test_controme_host(session: aiohttp.ClientSession, ip: str) -> Optiona
     
     try:
         # Check the login page with a short timeout
-        async with async_timeout.timeout(1):
+        async with asyncio.timeout(1):
             async with session.get(login_url) as response:
                 if response.status == 200:
                     # Check for the specific title in the HTML
@@ -80,8 +79,8 @@ async def test_controme_host(session: aiohttp.ClientSession, ip: str) -> Optiona
                     if "<title>Smart-Heat-OS - Login</title>" in text:
                         _LOGGER.info("Found Controme system at %s", ip)
                         return {"url": ip, "title": f"Controme at {ip}"}
-    except (asyncio.TimeoutError, aiohttp.ClientConnectorError, Exception):
-        # Skip any errors
+    except (TimeoutError, aiohttp.ClientError, ValueError):
+        # Skip hosts that do not answer or do not return a readable page
         pass
     
     return None
