@@ -14,6 +14,8 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 REQUEST_TIMEOUT = ClientTimeout(total=10)
 
+type ContromeConfigEntry = ConfigEntry["ContromeDataUpdateCoordinator"]
+
 class ContromeDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     """Class to manage fetching Controme data."""
 
@@ -34,6 +36,8 @@ class ContromeDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         )
         self._base_url = base_url
         self._house_id = house_id
+        # Device registry ID of the Controme hub, set in async_setup_entry
+        self.hub_device_id: str | None = None
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from Controme API."""

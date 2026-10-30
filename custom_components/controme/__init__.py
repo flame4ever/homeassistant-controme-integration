@@ -1,11 +1,10 @@
 """The Controme integration."""
 import logging
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.const import Platform
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
-from .coordinator import ContromeDataUpdateCoordinator
+from .coordinator import ContromeConfigEntry, ContromeDataUpdateCoordinator
 from .const import DOMAIN, CONF_HAUS_ID, CONF_API_URL
 
 _LOGGER = logging.getLogger(__name__)
@@ -14,14 +13,8 @@ PLATFORMS = [Platform.SENSOR, Platform.CLIMATE]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up the Controme component."""
-    hass.data.setdefault(DOMAIN, {})
-    return True
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry) -> bool:
     """Set up Controme from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
     coordinator = ContromeDataUpdateCoordinator(
         hass,
         entry,
@@ -30,25 +23,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     
     await coordinator.async_config_entry_first_refresh()
-    
-    hass.data[DOMAIN][entry.entry_id] = {
-        "coordinator": coordinator,
-        "config": entry.data,
-    }
 
-    # Register the main Controme hub device
+    # Register the main Controme hub device, room devices link to it via its ID
     device_registry = dr.async_get(hass)
-    device_registry.async_get_or_create(
+    hub_device = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, entry.data[CONF_HAUS_ID])},
         manufacturer="Controme",
         name=f"Controme Home {entry.data[CONF_HAUS_ID]}",
         model="Thermostat API",
     )
+    coordinator.hub_device_id = hub_device.id
+
+    entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: ContromeConfigEntry) -> bool:
     """Unload a config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

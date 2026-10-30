@@ -9,19 +9,19 @@ from homeassistant.components.sensor import (
     SensorStateClass,
     SensorEntityDescription,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     UnitOfTemperature,
     PERCENTAGE,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from aiohttp import ClientTimeout
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import slugify
 
+from .coordinator import ContromeConfigEntry
 from .helpers import find_room, iter_rooms, to_float
 from .const import (
     DOMAIN, 
@@ -80,20 +80,12 @@ SENSOR_TYPES: tuple[ContromeSensorEntityDescription, ...] = (
     ),
 )
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, async_add_entities):
     """Set up the Controme sensor platform."""
     sensors = []
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    coordinator = entry.runtime_data
     data = coordinator.data
     house_id = entry.data[CONF_HAUS_ID]
-
-    # Create hub device
-    hub_device_info = DeviceInfo(
-        identifiers={(DOMAIN, house_id)},
-        name="Controme Hub",
-        manufacturer="Controme",
-        model="Hub",
-    )
 
     _LOGGER.debug("Setting up Controme sensors with data: %s", data)
 
@@ -114,7 +106,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             name=room_name,
             manufacturer="Controme",
             model="Room",
-            via_device=(DOMAIN, house_id),
+            via_device_id=coordinator.hub_device_id,
         )
 
         # Add basic sensors

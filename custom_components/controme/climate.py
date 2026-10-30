@@ -8,7 +8,6 @@ from homeassistant.components.climate import (
     ClimateEntityFeature,
     HVACMode,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_TEMPERATURE,
     UnitOfTemperature,
@@ -16,12 +15,13 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from aiohttp import ClientError, ClientTimeout
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, CoordinatorEntity
 from homeassistant.util import slugify
 
+from .coordinator import ContromeConfigEntry
 from .helpers import find_room, iter_rooms, to_float
 from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD
 
@@ -30,10 +30,10 @@ SCAN_INTERVAL = timedelta(seconds=60)
 REQUEST_TIMEOUT = ClientTimeout(total=10)  # 10 Sekunden Timeout
 ATTR_HUMIDITY = "current_humidity"
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, async_add_entities):
     """Set up the Controme climate platform."""
     climate_devices = []
-    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    coordinator = entry.runtime_data
     data = coordinator.data
     house_id = entry.data[CONF_HAUS_ID]
 
@@ -48,7 +48,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             name=room_name,
             manufacturer="Controme",
             model="Thermostat API",
-            via_device=(DOMAIN, f"{house_id}"),
+            via_device_id=coordinator.hub_device_id,
         )
 
         climate_devices.append(
