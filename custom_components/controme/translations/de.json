@@ -63,17 +63,13 @@
                 "name": "Luftfeuchtigkeit"
             },
             "return": {
-                "name": "Rücklauftemperatur {sensor}"
+                "name": "{sensor}"
             },
             "total_offset": {
                 "name": "Temperaturanpassung"
             },
             "operation_mode": {
-                "name": "Betriebsart",
-                "state": {
-                    "heating": "Heizen",
-                    "off": "Aus"
-                }
+                "name": "Betriebsart"
             }
         }
     }

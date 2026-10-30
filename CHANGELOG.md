@@ -20,6 +20,10 @@
 ### Changes
 - **Entity Names**: Sensor names now come from the translations instead of hard coded German texts. English installations show English names. Return temperature sensors include their sensor name, so several return sensors in one room can be told apart. Climate entities take the name of their room device. Entity IDs and unique IDs are unchanged.
 - **Config Flow**: All steps (user, manual entry, credentials, system selection) and the discovery method options are translated in English and German. The descriptions point out that credentials are only checked when a temperature is set.
+- **Return Sensors**: Return temperature sensors are named after their Controme description (e.g. "Rücklauf 1 Wohnraum") instead of the hardware ID
+- **Climate Precision**: Climate entities show the current temperature with two decimals, like the temperature sensors
+- **Device Model**: Room devices consistently use the model "Room"
+- **Operation Mode**: Removed state translations that never matched the values reported by Controme ("Heating")
 - **Requirements**: Home Assistant 2026.8.0 or newer is required (via_device_id for devices)
 - **Documentation**: README lists the limitation that several Controme systems with the same haus_id are not supported
 

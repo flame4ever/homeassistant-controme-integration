@@ -63,17 +63,13 @@
                 "name": "Humidity"
             },
             "return": {
-                "name": "Return Temperature {sensor}"
+                "name": "{sensor}"
             },
             "total_offset": {
                 "name": "Total Offset"
             },
             "operation_mode": {
-                "name": "Operation Mode",
-                "state": {
-                    "heating": "Heating",
-                    "off": "Off"
-                }
+                "name": "Operation Mode"
             }
         }
     }

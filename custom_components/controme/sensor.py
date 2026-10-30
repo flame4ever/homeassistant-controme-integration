@@ -177,9 +177,15 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{self._house_id}_{self._floor_id}_{self._room_id}_{sensor_type}"
         self.__init_sensor_description(sensor_type)
         self.__init_entity_id(sensor_type, room_data.get("name") or f"room_{self._room_id}")
-        # The name comes from the translation_key, return sensors add their sensor name
+        # The name comes from the translation_key, return sensors use their Controme description
         if sensor_type.startswith("return_"):
-            self._attr_translation_placeholders = {"sensor": sensor_type[len("return_"):]}
+            sensor_name = sensor_type[len("return_"):]
+            description = next(
+                (sensor.get("beschreibung") for sensor in room_data.get("sensoren", [])
+                 if sensor.get("name") == sensor_name),
+                None,
+            )
+            self._attr_translation_placeholders = {"sensor": description or sensor_name}
         
         # Set initial values
         self._update_from_data(room_data)
