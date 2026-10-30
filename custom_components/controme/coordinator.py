@@ -3,7 +3,8 @@ from datetime import timedelta
 import logging
 from typing import Any, Dict
 
-from aiohttp import ClientTimeout
+from aiohttp import ClientError, ClientTimeout
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -19,6 +20,7 @@ class ContromeDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry: ConfigEntry,
         base_url: str,
         house_id: str,
     ) -> None:
@@ -26,6 +28,7 @@ class ContromeDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=60),
         )
@@ -42,7 +45,7 @@ class ContromeDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             async with session.get(endpoint, timeout=REQUEST_TIMEOUT) as response:
                 if response.status != 200:
                     raise UpdateFailed(f"Error fetching data: {response.status}")
-                data = await response.json()
+                data = await response.json(content_type=None)
                 
             fetch_time = self.hass.loop.time() - start_time
             _LOGGER.debug("Finished fetching controme data in %.3f seconds (success: True)", fetch_time)
@@ -60,6 +63,6 @@ class ContromeDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     _LOGGER.debug("Sample room data: %s", safe_sample)
             
             return data
-        except Exception as ex:
-            _LOGGER.error("Error communicating with API: %s", str(ex))
-            raise UpdateFailed(f"Error communicating with API: {str(ex)}") 
+        except (ClientError, TimeoutError, ValueError) as err:
+            # UpdateFailed is logged by the coordinator itself, so no extra error log here
+            raise UpdateFailed(f"Error communicating with API: {err}") from err

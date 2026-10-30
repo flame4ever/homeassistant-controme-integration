@@ -24,6 +24,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     coordinator = ContromeDataUpdateCoordinator(
         hass,
+        entry,
         entry.data[CONF_API_URL],
         entry.data[CONF_HAUS_ID],
     )
