@@ -2,12 +2,24 @@
 import asyncio
 import re
 import logging
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import socket
 import aiohttp
 from ipaddress import IPv4Network, IPv4Interface
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
+
+# Formats of "letzte_uebertragung": /temps/ uses "30.10.2026 15:10", /rltemps/ "15:10:19 30.10.2026"
+TRANSMISSION_FORMATS = (
+    "%d.%m.%Y %H:%M",
+    "%d.%m.%Y %H:%M:%S",
+    "%H:%M:%S %d.%m.%Y",
+    "%H:%M %d.%m.%Y",
+)
+# Maximum number of stale sensors listed in attributes
+MAX_STALE_SENSORS = 20
 
 def iter_rooms(data: Optional[List[Dict[str, Any]]]):
     """Yield (floor_id, room_id, room) for all rooms, using room-less floors as rooms."""
@@ -51,6 +63,56 @@ def to_float(value: Any) -> Optional[float]:
         return float(value)
     except (ValueError, TypeError):
         return None
+
+def parse_transmission(value: Any) -> Optional[datetime]:
+    """Parse a Controme transmission timestamp, returning None for empty or unknown values.
+
+    Controme reports local time without a time zone, so the Home Assistant time zone is
+    assumed. In the repeated hour of the DST change the first occurrence is used.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    for time_format in TRANSMISSION_FORMATS:
+        try:
+            parsed = datetime.strptime(value.strip(), time_format)
+        except ValueError:
+            continue
+        return parsed.replace(tzinfo=dt_util.get_default_time_zone())
+    return None
+
+def transmission_age(timestamp: datetime, now: datetime) -> timedelta:
+    """Return the age of a transmission, timestamps in the future have age 0."""
+    return max(now - timestamp, timedelta(0))
+
+def collect_stale(
+    data: Optional[List[Dict[str, Any]]], now: datetime, threshold: timedelta
+) -> tuple[Optional[datetime], int, List[Dict[str, Any]]]:
+    """Return the newest transmission, the number and a list of stale sensors.
+
+    A sensor is stale if its last transmission is older than the threshold. Sensors
+    without a parseable timestamp are never stale. The list holds the oldest
+    MAX_STALE_SENSORS sensors.
+    """
+    newest = None
+    stale = []
+    for _floor_id, room_id, room in iter_rooms(data):
+        for sensor in room.get("sensoren") or []:
+            if not isinstance(sensor, dict):
+                continue
+            timestamp = parse_transmission(sensor.get("letzte_uebertragung"))
+            if timestamp is None:
+                continue
+            if newest is None or timestamp > newest:
+                newest = timestamp
+            if transmission_age(timestamp, now) > threshold:
+                stale.append((timestamp, {
+                    "room": room.get("name") or f"Room {room_id}",
+                    "sensor": sensor.get("beschreibung"),
+                    "name": sensor.get("name"),
+                    "last_transmission": timestamp.isoformat(),
+                }))
+    stale.sort(key=lambda item: item[0])
+    return newest, len(stale), [entry for _timestamp, entry in stale[:MAX_STALE_SENSORS]]
 
 def get_local_ip() -> Optional[str]:
     """Get the local IP address of the machine."""

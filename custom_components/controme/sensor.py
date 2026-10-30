@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
 from .coordinator import ContromeConfigEntry
+from .entity import ContromeTransmissionEntity
 from .helpers import find_room, is_return_sensor, iter_rooms, to_float
 from .const import (
     DOMAIN,
@@ -137,6 +138,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, asy
                     )
                 )
                 _LOGGER.debug("Return sensor added")
+
+    # Transmission monitoring on the hub device
+    sensors.append(ContromeLastTransmissionSensor(coordinator, entry))
+    sensors.append(ContromeStaleSensorsSensor(coordinator, entry))
 
     _LOGGER.debug("Created %d sensors in total", len(sensors))
     async_add_entities(sensors)
@@ -307,3 +312,33 @@ class ContromeOperationModeSensor(CoordinatorEntity, SensorEntity):
         value = room_data.get(VALUE_MAP["operation_mode"])
         self._attr_native_value = value
         self._has_value = value is not None
+
+class ContromeLastTransmissionSensor(ContromeTransmissionEntity, SensorEntity):
+    """Newest last transmission of all Controme sensors."""
+
+    _platform_domain = "sensor"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, coordinator, config_entry):
+        """Initialize the sensor on the hub device."""
+        super().__init__(coordinator, config_entry, "last_transmission")
+
+    @property
+    def native_value(self):
+        """Return the newest transmission (timezone aware), or None if unknown."""
+        return self._newest
+
+class ContromeStaleSensorsSensor(ContromeTransmissionEntity, SensorEntity):
+    """Number of Controme sensors whose last transmission is older than the threshold."""
+
+    _platform_domain = "sensor"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator, config_entry):
+        """Initialize the sensor on the hub device."""
+        super().__init__(coordinator, config_entry, "stale_sensors")
+
+    @property
+    def native_value(self):
+        """Return the number of stale sensors."""
+        return self._stale_count

@@ -56,6 +56,20 @@
             "already_configured": "Device is already configured"
         }
     },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Controme Options",
+                "description": "Settings for the transmission monitoring of the Controme sensors.",
+                "data": {
+                    "stale_threshold": "Stale sensor threshold"
+                },
+                "data_description": {
+                    "stale_threshold": "Minutes without a transmission after which a sensor counts as stale (minimum 5, maximum 1440, default 15)."
+                }
+            }
+        }
+    },
     "selector": {
         "discovery_method": {
             "options": {
@@ -83,6 +97,17 @@
             },
             "operation_mode": {
                 "name": "Operation Mode"
+            },
+            "last_transmission": {
+                "name": "Last transmission"
+            },
+            "stale_sensors": {
+                "name": "Stale sensors"
+            }
+        },
+        "binary_sensor": {
+            "transmission_problem": {
+                "name": "Transmission problem"
             }
         }
     }
