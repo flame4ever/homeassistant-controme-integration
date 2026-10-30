@@ -30,7 +30,8 @@ PARALLEL_UPDATES = 1
 REQUEST_TIMEOUT = ClientTimeout(total=10)  # 10 Sekunden Timeout
 
 # Controme documents "heating", "cooling", "off" and "on"; some firmwares report
-# capitalized strings ("Heating") or integers (0 = off, 1 = cooling, 2 = heating)
+# capitalized strings ("Heating") or integers (0 = off, 1 = cooling, 2 = heating).
+# The integer mapping comes from issue #22 and is not documented by Controme.
 BETRIEBSART_TO_HVAC_MODE = {
     "heating": HVACMode.HEAT,
     "on": HVACMode.HEAT,
@@ -45,7 +46,17 @@ def betriebsart_to_hvac_mode(betriebsart: Any) -> HVACMode:
     """Map a Controme betriebsart to an HVAC mode, defaulting to heating."""
     if isinstance(betriebsart, str):
         betriebsart = betriebsart.strip().lower()
-    return BETRIEBSART_TO_HVAC_MODE.get(betriebsart, HVACMode.HEAT)
+        # Digit strings ("0", "1", "2") are treated like the integer values
+        if betriebsart.isascii() and betriebsart.isdigit():
+            betriebsart = int(betriebsart)
+    # bool is a subclass of int, so True/False must not match 1/0; other types
+    # (e.g. lists) are not hashable and cannot be looked up
+    if isinstance(betriebsart, (str, int)) and not isinstance(betriebsart, bool):
+        hvac_mode = BETRIEBSART_TO_HVAC_MODE.get(betriebsart)
+        if hvac_mode is not None:
+            return hvac_mode
+    _LOGGER.debug("Unknown betriebsart %r, using heating", betriebsart)
+    return HVACMode.HEAT
 
 async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, async_add_entities):
     """Set up the Controme climate platform."""
