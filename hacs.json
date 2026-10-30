@@ -1,7 +1,7 @@
 {
     "name": "Controme",
     "content_in_root": false,
-    "homeassistant": "2024.1.0",
+    "homeassistant": "2026.8.0",
     "render_readme": true,
     "zip_release": true,
     "filename": "controme.zip"

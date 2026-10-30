@@ -3,21 +3,36 @@ import logging
 from typing import Any, Optional
 import voluptuous as vol
 import aiohttp
-import asyncio
 from homeassistant import config_entries
-from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
-from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD
+from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
+from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD, DEFAULT_HAUS_ID
 from .helpers import scan_network
 
 _LOGGER = logging.getLogger(__name__)
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
-# Schema for the initial choice step - using direct texts for options
+# Schema for the initial choice step, option labels come from the translations
 STEP_INIT_DATA_SCHEMA = vol.Schema({
-    vol.Required("discovery_method"): vol.In({
-        "auto": "Automatisch nach Controme-Systemen im Netzwerk suchen",
-        "manual": "IP-Adresse und Zugangsdaten manuell eingeben"
-    }),
+    vol.Required("discovery_method"): SelectSelector(
+        SelectSelectorConfig(
+            options=["auto", "manual"],
+            translation_key="discovery_method",
+            mode=SelectSelectorMode.LIST,
+        )
+    ),
+})
+
+# Schema for credential entry of a single discovered system
+STEP_CREDENTIALS_DATA_SCHEMA = vol.Schema({
+    vol.Required(CONF_USER): str,
+    vol.Required(CONF_PASSWORD): str,
+    vol.Required(CONF_HAUS_ID, default=DEFAULT_HAUS_ID): str,
 })
 
 # Schema for manual entry
@@ -25,7 +40,16 @@ STEP_USER_DATA_SCHEMA = vol.Schema({
     vol.Required(CONF_API_URL): str,
     vol.Required(CONF_USER): str,
     vol.Required(CONF_PASSWORD): str,
+    vol.Required(CONF_HAUS_ID, default=DEFAULT_HAUS_ID): str,
 })
+
+def normalize_haus_id(value: Any) -> Optional[str]:
+    """Return the house ID without leading zeros ("01" -> "1"), or None if it is not only digits."""
+    haus_id = str(value).strip()
+    # isdigit() alone also accepts e.g. superscripts, which int() rejects
+    if not haus_id.isascii() or not haus_id.isdigit():
+        return None
+    return str(int(haus_id))
 
 class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Controme."""
@@ -35,10 +59,9 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self):
         """Initialize the config flow."""
         self._discovered_systems = []
-        self._user_input = {}
         self._scan_already_run = False
 
-    async def async_step_user(self, user_input: Optional[dict[str, Any]] = None) -> FlowResult:
+    async def async_step_user(self, user_input: Optional[dict[str, Any]] = None) -> ConfigFlowResult:
         """Handle the initial step."""
         if user_input is None:
             # Reset scan flag when starting a new flow
@@ -47,24 +70,17 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_show_form(
                 step_id="user",
                 data_schema=STEP_INIT_DATA_SCHEMA,
-                description_placeholders={"title": "Controme Einrichtung"},
             )
-        
+
         # User has made a choice on discovery method
-        if "discovery_method" in user_input:
-            discovery_method = user_input["discovery_method"]
-            
-            if discovery_method == "auto":
-                # User chose automatic discovery, run it directly
-                return await self.async_step_auto_discovery()
-            else:
-                # User chose manual entry
-                return await self.async_step_manual_entry()
+        if user_input["discovery_method"] == "auto":
+            # User chose automatic discovery, run it directly
+            return await self.async_step_auto_discovery()
 
-        # If we get here, we're handling manual entry with data already provided
-        return await self._process_user_input(user_input)
+        # User chose manual entry
+        return await self.async_step_manual_entry()
 
-    async def async_step_auto_discovery(self, user_input: Optional[dict[str, Any]] = None) -> FlowResult:
+    async def async_step_auto_discovery(self, user_input: Optional[dict[str, Any]] = None) -> ConfigFlowResult:
         """Handle automatic discovery of Controme systems."""
         # Check if we've already run a scan in this flow
         if self._scan_already_run:
@@ -81,47 +97,54 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Show the appropriate form based on scan results
         return self._show_form_after_scan()
 
-    def _show_form_after_scan(self) -> FlowResult:
+    def _show_form_after_scan(self) -> ConfigFlowResult:
         """Show the appropriate form based on scan results."""
         if self._discovered_systems:
             # If we found exactly one system, go directly to credentials entry
             if len(self._discovered_systems) == 1:
-                system = self._discovered_systems[0]
-                return self.async_show_form(
-                    step_id="credentials",
-                    description_placeholders={
-                        "system": system["title"]
-                    },
-                    data_schema=vol.Schema({
-                        vol.Required(CONF_USER): str,
-                        vol.Required(CONF_PASSWORD): str,
-                    })
-                )
+                return self._show_step_form("credentials")
             # If we found multiple systems, show selection screen
-            else:
-                return self.async_show_form(
-                    step_id="select_system",
-                    description_placeholders={
-                        "count": str(len(self._discovered_systems))
-                    },
-                    data_schema=vol.Schema({
-                        vol.Required(CONF_API_URL): vol.In({
-                            system["url"]: system["title"] 
-                            for system in self._discovered_systems
-                        }),
-                        vol.Required(CONF_USER): str,
-                        vol.Required(CONF_PASSWORD): str,
-                    })
-                )
-        
+            return self._show_step_form("select_system")
+
         # No systems found, fall back to manual entry
         _LOGGER.warning("No Controme systems found during scan. Falling back to manual entry.")
+        return self._show_step_form("manual_entry", {"base": "no_systems_found"})
+
+    def _show_step_form(
+        self, step_id: str, errors: Optional[dict[str, str]] = None
+    ) -> ConfigFlowResult:
+        """Show the form of the given step, optionally with errors."""
+        if step_id == "credentials":
+            return self.async_show_form(
+                step_id="credentials",
+                description_placeholders={
+                    "system": self._discovered_systems[0]["title"]
+                },
+                data_schema=STEP_CREDENTIALS_DATA_SCHEMA,
+                errors=errors
+            )
+        if step_id == "select_system":
+            return self.async_show_form(
+                step_id="select_system",
+                description_placeholders={
+                    "count": str(len(self._discovered_systems))
+                },
+                data_schema=vol.Schema({
+                    vol.Required(CONF_API_URL): vol.In({
+                        system["url"]: system["title"]
+                        for system in self._discovered_systems
+                    }),
+                    vol.Required(CONF_USER): str,
+                    vol.Required(CONF_PASSWORD): str,
+                    vol.Required(CONF_HAUS_ID, default=DEFAULT_HAUS_ID): str,
+                }),
+                errors=errors
+            )
+        # Manual entry
         return self.async_show_form(
             step_id="manual_entry",
-            description_placeholders={
-                "error": "No systems found automatically. Please enter details manually."
-            },
-            data_schema=STEP_USER_DATA_SCHEMA
+            data_schema=STEP_USER_DATA_SCHEMA,
+            errors=errors
         )
 
     async def _async_scan_systems(self) -> None:
@@ -133,73 +156,70 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Run the scan
             self._discovered_systems = await scan_network()
             _LOGGER.info("Network scan complete. Found %d systems", len(self._discovered_systems))
-        except Exception as err:
+        except (aiohttp.ClientError, TimeoutError, OSError, ValueError) as err:
             _LOGGER.error("Error scanning network: %s", err)
             self._discovered_systems = []
 
-    async def async_step_credentials(self, user_input: Optional[dict[str, Any]] = None) -> FlowResult:
+    async def async_step_credentials(self, user_input: Optional[dict[str, Any]] = None) -> ConfigFlowResult:
         """Handle credential entry for a discovered system."""
-        errors = {}
-        
         if user_input is None:
             # Show the credentials form
-            return self.async_show_form(
-                step_id="credentials",
-                description_placeholders={
-                    "system": self._discovered_systems[0]["title"]
-                },
-                data_schema=vol.Schema({
-                    vol.Required(CONF_USER): str,
-                    vol.Required(CONF_PASSWORD): str,
-                }),
-                errors=errors
-            )
-        
+            return self._show_step_form("credentials")
+
         # User has provided credentials
         system = self._discovered_systems[0]
         user_input[CONF_API_URL] = system["url"]
-        
-        # Test the connection with the provided credentials
-        return await self._process_user_input(user_input)
 
-    async def async_step_manual_entry(self, user_input: Optional[dict[str, Any]] = None) -> FlowResult:
+        # Test the connection (the credentials themselves are not checked here)
+        return await self._process_user_input(user_input, "credentials")
+
+    async def async_step_manual_entry(self, user_input: Optional[dict[str, Any]] = None) -> ConfigFlowResult:
         """Handle manual entry of Controme system details."""
-        errors = {}
-        
         if user_input is None:
             # Show the manual entry form directly
-            return self.async_show_form(
-                step_id="manual_entry",
-                data_schema=STEP_USER_DATA_SCHEMA,
-                errors=errors
-            )
-        
-        # User has provided manual details
-        return await self._process_user_input(user_input)
+            return self._show_step_form("manual_entry")
 
-    async def _process_user_input(self, user_input: dict[str, Any]) -> FlowResult:
-        """Process the user input from either discovery or manual entry."""
+        # User has provided manual details
+        return await self._process_user_input(user_input, "manual_entry")
+
+    async def _process_user_input(
+        self, user_input: dict[str, Any], step_id: str
+    ) -> ConfigFlowResult:
+        """Process the user input of the given step and show it again on errors."""
         errors = {}
         
+        base_url = user_input[CONF_API_URL].strip()
+        if not base_url.startswith(("http://", "https://")):
+            base_url = f"http://{base_url}"
+        base_url = base_url.rstrip('/')
+        haus_id = normalize_haus_id(user_input.get(CONF_HAUS_ID, DEFAULT_HAUS_ID))
+        if haus_id is None:
+            # Only digits are allowed, show the calling step again
+            return self._show_step_form(step_id, {CONF_HAUS_ID: "invalid_haus_id"})
+
+        # Prevent setting up the same house of a Controme system twice
+        for entry in self._async_current_entries():
+            stored_haus_id = str(entry.data.get(CONF_HAUS_ID, DEFAULT_HAUS_ID))
+            if (
+                entry.data.get(CONF_API_URL, "").rstrip('/').lower() == base_url.lower()
+                and (normalize_haus_id(stored_haus_id) or stored_haus_id) == haus_id
+            ):
+                return self.async_abort(reason="already_configured")
+
         try:
-            # Test connection with the provided data
-            async with aiohttp.ClientSession() as session:
-                base_url = user_input[CONF_API_URL]
-                if not base_url.startswith(("http://", "https://")):
-                    base_url = f"http://{base_url}"
-                url = f"{base_url.rstrip('/')}/get/json/v1/1/temps/"
-                
-                async with session.get(
-                    url,
-                    auth=aiohttp.BasicAuth(user_input[CONF_USER], user_input[CONF_PASSWORD])
-                ) as response:
-                    if response.status == 401:
-                        errors["base"] = "invalid_auth"
-                    elif response.status != 200:
+            # Test connection with the provided data. The read API does not require
+            # authentication, so this only verifies that the system is reachable.
+            session = async_get_clientsession(self.hass)
+            url = f"{base_url}/get/json/v1/{haus_id}/temps/"
+
+            async with session.get(url, timeout=REQUEST_TIMEOUT) as response:
+                if response.status != 200:
+                    errors["base"] = "cannot_connect"
+                else:
+                    data = await response.json(content_type=None)
+                    if not isinstance(data, list):
                         errors["base"] = "cannot_connect"
                     else:
-                        # Save inputs for later steps
-                        self._user_input = user_input
                         # Create config entry
                         return self.async_create_entry(
                             title=f"Controme ({user_input[CONF_API_URL]})",
@@ -207,96 +227,19 @@ class ContromeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 CONF_API_URL: base_url,
                                 CONF_USER: user_input[CONF_USER],
                                 CONF_PASSWORD: user_input[CONF_PASSWORD],
-                                CONF_HAUS_ID: "1"  # Default house ID
+                                CONF_HAUS_ID: haus_id
                             }
                         )
-        except Exception as err:
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             _LOGGER.error("Error testing connection: %s", err)
             errors["base"] = "cannot_connect"
 
-        # Show form again on errors
-        if "discovery_method" in user_input:
-            # We were on the initial step
-            return self.async_show_form(
-                step_id="user",
-                data_schema=STEP_INIT_DATA_SCHEMA,
-                errors=errors
-            )
-        elif CONF_API_URL in user_input and user_input[CONF_API_URL] in [system["url"] for system in self._discovered_systems]:
-            # We were on the system selection step
-            return self.async_show_form(
-                step_id="select_system",
-                data_schema=vol.Schema({
-                    vol.Required(CONF_API_URL): vol.In({
-                        system["url"]: system["title"] 
-                        for system in self._discovered_systems
-                    }),
-                    vol.Required(CONF_USER): str,
-                    vol.Required(CONF_PASSWORD): str,
-                }),
-                errors=errors
-            )
-        elif len(self._discovered_systems) == 1:
-            # We were on the credentials step for a single discovered system
-            return self.async_show_form(
-                step_id="credentials",
-                description_placeholders={
-                    "system": self._discovered_systems[0]["title"]
-                },
-                data_schema=vol.Schema({
-                    vol.Required(CONF_USER): str,
-                    vol.Required(CONF_PASSWORD): str,
-                }),
-                errors=errors
-            )
-        else:
-            # We were on the manual entry step
-            return self.async_show_form(
-                step_id="manual_entry",
-                data_schema=STEP_USER_DATA_SCHEMA,
-                errors=errors
-            )
+        # Show the calling step again with the errors
+        return self._show_step_form(step_id, errors)
 
-    async def async_step_select_system(self, user_input: Optional[dict[str, Any]] = None) -> FlowResult:
+    async def async_step_select_system(self, user_input: Optional[dict[str, Any]] = None) -> ConfigFlowResult:
         """Handle system selection step."""
         if user_input is not None:
-            return await self._process_user_input(user_input)
+            return await self._process_user_input(user_input, "select_system")
 
-        return self.async_show_form(
-            step_id="select_system",
-            data_schema=vol.Schema({
-                vol.Required(CONF_API_URL): vol.In({
-                    system["url"]: system["title"] 
-                    for system in self._discovered_systems
-                }),
-                vol.Required(CONF_USER): str,
-                vol.Required(CONF_PASSWORD): str,
-            })
-        )
-
-    async def async_step_select_house(self, user_input: Optional[dict[str, Any]] = None) -> FlowResult:
-        """Handle the house selection step when multiple houses are found."""
-        if user_input is None:
-            _LOGGER.debug("Entered async_step_select_house without user input. Available houses: %s", self.houses)
-            data_schema = vol.Schema({
-                vol.Required(CONF_HAUS_ID): vol.In({
-                    house["id"]: house.get("name", house["id"]) for house in self.houses
-                })
-            })
-            _LOGGER.debug("Showing select_house form with schema: %s", data_schema)
-            return self.async_show_form(
-                step_id="select_house", 
-                data_schema=data_schema
-            )
-
-        _LOGGER.info("House selected: %s", user_input[CONF_HAUS_ID])
-        self._user_input[CONF_HAUS_ID] = user_input[CONF_HAUS_ID]
-        _LOGGER.debug("Final user input data for config entry: %s", self._user_input)
-        _LOGGER.info("Creating config entry for Controme integration based on selected house")
-        return self.async_create_entry(title="Controme", data=self._user_input)
-        
-    # Tell Home Assistant how to handle the progress screen
-    @staticmethod
-    def async_get_progress_steps() -> list[str]:
-        """Return a list of steps that are shown while we're in progress."""
-        return ["auto_discovery"]
+        return self._show_step_form("select_system")

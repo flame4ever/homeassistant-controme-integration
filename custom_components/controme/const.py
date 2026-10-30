@@ -1,7 +1,6 @@
 """Constants for the Controme integration."""
 
 from typing import Final
-from homeassistant.const import Platform
 
 # Integration domain
 DOMAIN: Final = "controme"
@@ -11,6 +10,9 @@ CONF_API_URL: Final = "api_url"
 CONF_HAUS_ID: Final = "haus_id"
 CONF_USER: Final = "user"
 CONF_PASSWORD: Final = "password"
+
+# Most Controme systems have a single house with ID 1
+DEFAULT_HAUS_ID: Final = "1"
 
 # Platforms are now defined in __init__.py
 
