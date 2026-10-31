@@ -18,6 +18,9 @@
                     "haus_id": "Haus-ID"
                 },
                 "data_description": {
+                    "api_url": "Adresse des Controme-Systems, z. B. http://192.168.1.100 (http:// wird bei Bedarf ergänzt).",
+                    "user": "Benutzername eines Controme-Benutzers, der Temperaturen ändern darf.",
+                    "password": "Passwort dieses Controme-Benutzers. Die Zugangsdaten werden erst beim Schreiben geprüft (z. B. beim Setzen einer Temperatur), nicht bei der Einrichtung.",
                     "haus_id": "Haus-ID des Controme-Systems (meistens 1)."
                 }
             },
@@ -30,6 +33,8 @@
                     "haus_id": "Haus-ID"
                 },
                 "data_description": {
+                    "user": "Benutzername eines Controme-Benutzers, der Temperaturen ändern darf.",
+                    "password": "Passwort dieses Controme-Benutzers. Die Zugangsdaten werden erst beim Schreiben geprüft (z. B. beim Setzen einer Temperatur), nicht bei der Einrichtung.",
                     "haus_id": "Haus-ID des Controme-Systems (meistens 1)."
                 }
             },
@@ -43,6 +48,9 @@
                     "haus_id": "Haus-ID"
                 },
                 "data_description": {
+                    "api_url": "Im Netzwerk gefundenes Controme-System.",
+                    "user": "Benutzername eines Controme-Benutzers, der Temperaturen ändern darf.",
+                    "password": "Passwort dieses Controme-Benutzers. Die Zugangsdaten werden erst beim Schreiben geprüft (z. B. beim Setzen einer Temperatur), nicht bei der Einrichtung.",
                     "haus_id": "Haus-ID des Controme-Systems (meistens 1)."
                 }
             }
