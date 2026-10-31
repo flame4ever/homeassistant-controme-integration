@@ -9,12 +9,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .api import SHORT_REQUEST_TIMEOUT, async_get_json, scenes_read_url
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 REQUEST_TIMEOUT = ClientTimeout(total=10)
 # The outputs are optional, so an unreachable /outs/ delays the update by at most 5 s
 OUTS_REQUEST_TIMEOUT = ClientTimeout(total=5)
+# Scenes change rarely: the list is read during setup, then at most every 10 minutes
+# and with the next update after activate_scene
+SCENES_REFRESH_SECONDS = 600
 
 type ContromeConfigEntry = ConfigEntry["ContromeDataUpdateCoordinator"]
 
@@ -40,6 +44,9 @@ class ContromeDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self._house_id = house_id
         # Device registry ID of the Controme hub, set in async_setup_entry
         self.hub_device_id: str | None = None
+        # Last scene list from /temperaturszenen/ (None until it was read once)
+        self.scenes: list | None = None
+        self._scenes_read_at: float | None = None
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from Controme API."""
@@ -73,7 +80,30 @@ class ContromeDataUpdateCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             raise UpdateFailed(f"Error communicating with API: {err}") from err
 
         await self._async_add_outputs(session, data)
+        await self._async_update_scenes()
         return data
+
+    def invalidate_scenes(self) -> None:
+        """Read the scene list again with the next update (e.g. after activate_scene)."""
+        self._scenes_read_at = None
+
+    async def _async_update_scenes(self) -> None:
+        """Read the scene list, throttled to SCENES_REFRESH_SECONDS.
+
+        The scenes are optional: errors keep the last list and never fail the
+        update; a failed read is retried after the same interval.
+        """
+        now = self.hass.loop.time()
+        if self._scenes_read_at is not None and now - self._scenes_read_at < SCENES_REFRESH_SECONDS:
+            return
+        self._scenes_read_at = now
+        scenes = await async_get_json(
+            self.hass, scenes_read_url(self._base_url, self._house_id), SHORT_REQUEST_TIMEOUT
+        )
+        if not isinstance(scenes, list):
+            _LOGGER.debug("Could not read the scene list, keeping the last one")
+            return
+        self.scenes = scenes
 
     async def _async_add_outputs(self, session, data) -> None:
         """Add the output (valve) values of each room as "ausgang" to the room data.

@@ -24,6 +24,7 @@ MAX_STALE_THRESHOLD: Final = 1440
 # Entity services of the climate entities
 SERVICE_SET_TEMPORARY_TEMPERATURE: Final = "set_temporary_temperature"
 SERVICE_ACTIVATE_SCENE: Final = "activate_scene"
+SERVICE_RESET_TEMPORARY_TEMPERATURE: Final = "reset_temporary_temperature"
 ATTR_DURATION: Final = "duration"
 ATTR_SCENE_ID: Final = "scene_id"
 # Same limits as the climate entities
@@ -43,6 +44,12 @@ SENSOR_TYPE_HUMIDITY = "humidity"
 SENSOR_TYPE_RETURN = "return"
 SENSOR_TYPE_TOTAL_OFFSET = "total_offset"
 SENSOR_TYPE_OPERATION_MODE = "operation_mode"
+# Calculated from temperatur, solltemperatur and total_offset, so not in VALUE_MAP
+SENSOR_TYPE_CONTROL_DEVIATION = "control_deviation"
+# Mean of the room's outputs from /outs/ ("ausgang")
+SENSOR_TYPE_VALVE = "valve"
+# Further sensors of a room from "sensoren" are "sensor_{name}" (return sensors "return_{name}")
+SENSOR_TYPE_ROOM_SENSOR_PREFIX = "sensor_"
 
 SENSOR_TYPES = {
     SENSOR_TYPE_CURRENT: "temperatur",
@@ -58,6 +65,8 @@ ENTITY_ID_MAP = {
     SENSOR_TYPE_HUMIDITY: "humidity",
     SENSOR_TYPE_TOTAL_OFFSET: "offset",
     SENSOR_TYPE_OPERATION_MODE: "mode",
+    SENSOR_TYPE_CONTROL_DEVIATION: "control_deviation",
+    SENSOR_TYPE_VALVE: "valve",
 }
 
 # Map sensor types to API data keys

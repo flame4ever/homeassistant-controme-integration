@@ -111,6 +111,18 @@
             },
             "stale_sensors": {
                 "name": "Stale sensors"
+            },
+            "control_deviation": {
+                "name": "Control deviation"
+            },
+            "valve": {
+                "name": "Valve position"
+            },
+            "room_sensor": {
+                "name": "{sensor}"
+            },
+            "scenes": {
+                "name": "Temperature scenes"
             }
         },
         "binary_sensor": {
@@ -133,6 +145,10 @@
                     "description": "Approximate duration in minutes (1-1440). Without a duration Controme uses its default duration."
                 }
             }
+        },
+        "reset_temporary_temperature": {
+            "name": "Reset temporary temperature",
+            "description": "Ends a temporary temperature of the selected Controme rooms by sending the permanent target temperature reported by Controme again, each room separately. Only works if the Controme firmware reports the permanent target temperature; otherwise nothing is sent and an error is shown."
         },
         "activate_scene": {
             "name": "Activate scene",
@@ -179,6 +195,9 @@
         },
         "scene_applied_to_other_rooms": {
             "message": "Controme reports that scene {scene_id} was also applied to other rooms: {rooms}. Please check these rooms in Controme."
+        },
+        "temporary_reset_unavailable": {
+            "message": "The temporary temperature of room ID {room_id} cannot be reset, because Controme does not report a permanent target temperature. Nothing was sent; set the temperature normally instead."
         }
     }
 }

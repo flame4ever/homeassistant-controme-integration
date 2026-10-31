@@ -11,6 +11,7 @@ from .const import (
     DOMAIN,
     SERVICE_SET_TEMPORARY_TEMPERATURE,
     SERVICE_ACTIVATE_SCENE,
+    SERVICE_RESET_TEMPORARY_TEMPERATURE,
     ATTR_DURATION,
     ATTR_SCENE_ID,
     MIN_TEMPERATURE,
@@ -73,6 +74,9 @@ ACTIVATE_SCENE_SCHEMA = {
     vol.Optional(ATTR_DURATION): validate_duration,
 }
 
+# No fields: the permanent target temperature reported by Controme is sent again
+RESET_TEMPORARY_TEMPERATURE_SCHEMA: dict = {}
+
 
 @callback
 def async_setup_services(hass: HomeAssistant) -> None:
@@ -92,4 +96,12 @@ def async_setup_services(hass: HomeAssistant) -> None:
         entity_domain=CLIMATE_DOMAIN,
         schema=ACTIVATE_SCENE_SCHEMA,
         func="async_activate_scene",
+    )
+    service.async_register_platform_entity_service(
+        hass,
+        DOMAIN,
+        SERVICE_RESET_TEMPORARY_TEMPERATURE,
+        entity_domain=CLIMATE_DOMAIN,
+        schema=RESET_TEMPORARY_TEMPERATURE_SCHEMA,
+        func="async_reset_temporary_temperature",
     )

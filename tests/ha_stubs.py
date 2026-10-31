@@ -3,9 +3,13 @@
 Only what the Controme modules use is modelled; everything else is a dummy class,
 so the package can be imported without Home Assistant installed.
 """
+from dataclasses import dataclass
+from datetime import datetime, timezone
 import enum
+import re
 import sys
 import types
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -80,6 +84,30 @@ class ClientError(Exception):
     pass
 
 
+@dataclass(frozen=True, kw_only=True)
+class SensorEntityDescription:
+    """The fields of the HA entity description the Controme sensors use."""
+
+    key: str
+    translation_key: str | None = None
+    device_class: str | None = None
+    state_class: str | None = None
+    native_unit_of_measurement: str | None = None
+    suggested_display_precision: int | None = None
+    entity_registry_enabled_default: bool = True
+    entity_category: str | None = None
+    icon: str | None = None
+    has_entity_name: bool = False
+    name: str | None = None
+
+
+def slugify(text, separator="_"):
+    """Approximation of homeassistant.util.slugify (python-slugify with unidecode)."""
+    text = unicodedata.normalize("NFKD", str(text).replace("ß", "ss"))
+    text = text.encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", separator, text).strip(separator)
+
+
 class ClientTimeout:
     def __init__(self, total=None):
         self.total = total
@@ -124,6 +152,9 @@ class FakeResponse:
         return self._text
 
     async def json(self, content_type=None):
+        if isinstance(self._payload, BaseException):
+            # e.g. ValueError for a body that is no JSON
+            raise self._payload
         return self._payload
 
     async def __aenter__(self):
@@ -139,6 +170,7 @@ class FakeSession:
     def __init__(self):
         self.posts = []
         self.gets = []
+        self.get_timeouts = []
         self.post_responses = []
         self.get_responses = []
 
@@ -154,6 +186,7 @@ class FakeSession:
 
     def get(self, url, timeout=None):
         self.gets.append(url)
+        self.get_timeouts.append(timeout)
         return self._next(self.get_responses)
 
 
@@ -229,6 +262,10 @@ def install(time_zone):
             (domain, name, kwargs))
     )
     modules["homeassistant.util.dt"].get_default_time_zone = lambda: time_zone
+    modules["homeassistant.util.dt"].utcnow = lambda: datetime.now(timezone.utc)
+    modules["homeassistant.util"].slugify = slugify
+    modules["homeassistant.components.sensor"].SensorEntityDescription = SensorEntityDescription
+    modules["homeassistant.const"].PERCENTAGE = "%"
     modules["homeassistant.config_entries"].ConfigFlow = type(
         "ConfigFlow", (Dummy,), {"__init_subclass__": classmethod(lambda cls, **kw: None)}
     )

@@ -26,9 +26,14 @@ class FakeCoordinator:
         self.hass = object()
         self.last_update_success = True
         self.refreshes = 0
+        self.scenes = None
+        self.scenes_invalidated = 0
 
     async def async_request_refresh(self):
         self.refreshes += 1
+
+    def invalidate_scenes(self):
+        self.scenes_invalidated += 1
 
 
 def make_climate(room=None):
@@ -406,7 +411,7 @@ def test_services_yaml_matches_schema():
     assert fields["duration"]["selector"]["number"]["max"] == 1440
     assert data["set_temporary_temperature"]["target"]["entity"] == {
         "integration": "controme", "domain": "climate"}
-    assert set(data) == {"set_temporary_temperature", "activate_scene"}
+    assert set(data) == {"set_temporary_temperature", "activate_scene", "reset_temporary_temperature"}
     scene = data["activate_scene"]
     assert scene["target"]["entity"] == {"integration": "controme", "domain": "climate"}
     assert set(scene["fields"]) == {"scene_id", "duration"}
@@ -416,7 +421,7 @@ def test_services_yaml_matches_schema():
     # Every service and field has a translation
     translations = json.loads((path.parent / "translations" / "en.json").read_text(encoding="utf-8"))
     for name, service_data in data.items():
-        assert set(service_data["fields"]) == set(translations["services"][name]["fields"]), name
+        assert set(service_data.get("fields", {})) == set(translations["services"][name].get("fields", {})), name
 
 
 def test_temporary_attributes_only_when_reported():
@@ -473,6 +478,8 @@ def test_activate_scene_single_room():
         # Refresh delayed like for the temporary temperature
         assert [call["delay"] for call in ha_stubs.CALL_LATER] == [climate.DELAYED_REFRESH_SECONDS]
         assert coordinator.refreshes == 0
+        # S6-06: the delayed refresh reads the scene list again
+        assert coordinator.scenes_invalidated == 1
 
 
 def test_activate_scene_rejections_send_nothing():
@@ -493,6 +500,7 @@ def test_activate_scene_rejections_send_nothing():
         assert isinstance(err, ha_stubs.ServiceValidationError) == (key != "scene_list_unavailable"), key
         assert SESSION.posts == [], (room_id, scene_id)
         assert coordinator.refreshes == 0
+        assert coordinator.scenes_invalidated == 0
 
 
 def test_activate_scene_ambiguous_room_name():
@@ -562,7 +570,7 @@ def test_activate_scene_registered():
     registry.clear()
     asyncio.run(integration.async_setup(None, {}))
     registered = {name: kwargs for _domain, name, kwargs in registry}
-    assert set(registered) == {"set_temporary_temperature", "activate_scene"}
+    assert set(registered) == {"set_temporary_temperature", "activate_scene", "reset_temporary_temperature"}
     assert registered["activate_scene"]["entity_domain"] == "climate"
     assert registered["activate_scene"]["func"] == "async_activate_scene"
     # No scene entity platform
@@ -637,6 +645,101 @@ def test_room_labels_from_temps():
     data = [{"id": 5, "etagenname": "Test (ßÜÖÄüöä)", "raeume": [{"id": 13, "name": "Testraum (ßÜÖÄüöä)"}]},
             {"id": 6, "raeume": [{"id": 14, "name": "Bad"}, {"id": 15}, None]}, None, {"id": 7, "raeume": "x"}]
     assert helpers.room_labels(data) == [(5, 13, TEST_LABEL), (6, 14, " / Bad")]
+
+
+# S6-04: reset_temporary_temperature
+def reset_call(entity):
+    return asyncio.run(entity.async_reset_temporary_temperature())
+
+
+def test_reset_without_perm_raises_and_sends_nothing():
+    for extra in ({}, {"is_temporary_mode": True}, {"perm_solltemperatur": None},
+                  {"perm_solltemperatur": "abc"}, {"perm_solltemperatur": "nan"},
+                  {"perm_solltemperatur": True}):
+        reset()
+        ha_stubs.CALL_LATER.clear()
+        entity, coordinator = make_climate({"id": 13, "name": "Testraum", "solltemperatur": 22.0, **extra})
+        err = raises(ha_stubs.ServiceValidationError, reset_call, entity)
+        assert (err.translation_domain, err.translation_key) == ("controme", "temporary_reset_unavailable")
+        assert err.translation_placeholders == {"room_id": "13"}
+        assert SESSION.posts == [], extra
+        assert ha_stubs.CALL_LATER == [] and coordinator.refreshes == 0
+
+
+def test_reset_not_temporary_does_nothing():
+    for value in (False, "false", "0"):
+        reset()
+        ha_stubs.CALL_LATER.clear()
+        LOGS.messages.clear()
+        entity, coordinator = make_climate({"id": 13, "name": "Testraum", "solltemperatur": 21.0,
+                                            "is_temporary_mode": value, "perm_solltemperatur": 21.0})
+        assert reset_call(entity) is None
+        assert SESSION.posts == [] and ha_stubs.CALL_LATER == []
+        assert any("nothing to reset" in message for message in LOGS.messages)
+
+
+def test_reset_with_perm_sends_exactly_one_soll():
+    for extra, expected in (({"perm_solltemperatur": 21.0}, "21.0"),
+                            ({"perm_solltemperatur": "20.5", "is_temporary_mode": True}, "20.5"),
+                            ({"perm_solltemperatur": 19, "is_temporary_mode": "true"}, "19.0")):
+        reset()
+        ha_stubs.CALL_LATER.clear()
+        entity, coordinator = make_climate({"id": 13, "name": "Testraum", "solltemperatur": 23.0, **extra})
+        reset_call(entity)
+        assert len(SESSION.posts) == 1
+        assert SESSION.posts[0]["url"] == "http://controme.local/set/json/v1/1/soll/13/"
+        assert SESSION.posts[0]["data"] == {"soll": expected, "user": USER, "password": PASSWORD}
+        assert entity._attr_target_temperature == float(expected)
+        # Delayed refresh like after a temporary temperature
+        assert [call["delay"] for call in ha_stubs.CALL_LATER] == [climate.DELAYED_REFRESH_SECONDS]
+        assert coordinator.refreshes == 0
+
+
+def test_reset_uses_current_coordinator_data():
+    reset()
+    entity, coordinator = make_climate({"id": 13, "name": "Testraum", "solltemperatur": 23.0})
+    coordinator.data[0]["raeume"][0]["perm_solltemperatur"] = 21.5
+    reset_call(entity)
+    assert [p["data"]["soll"] for p in SESSION.posts] == ["21.5"]
+    # Room gone from the data: no perm, nothing sent
+    reset()
+    coordinator.data = [{"id": 5, "raeume": []}]
+    raises(ha_stubs.ServiceValidationError, reset_call, entity)
+    assert SESSION.posts == []
+
+
+def test_reset_synthetic_room_and_unloaded_entry():
+    reset()
+    entity, _ = make_climate({"name": "Floor", "temperatur": 20.0, "perm_solltemperatur": 21.0})
+    err = raises(ha_stubs.ServiceValidationError, reset_call, entity)
+    assert err.translation_key == "not_a_room"
+    ha_stubs.UNLOADED_ENTRIES.add("entry1")
+    try:
+        entity, _ = make_climate({"id": 13, "name": "R", "perm_solltemperatur": 21.0})
+        err = raises(ha_stubs.ServiceValidationError, reset_call, entity)
+        assert err.translation_key == "service_config_entry_not_loaded"
+    finally:
+        ha_stubs.UNLOADED_ENTRIES.clear()
+    assert SESSION.posts == [] and SESSION.gets == []
+
+
+def test_reset_errors_from_write_are_passed_on():
+    reset()
+    SESSION.post_responses.append(FakeResponse(403, "Forbidden"))
+    entity, _ = make_climate({"id": 13, "name": "R", "perm_solltemperatur": 21.0})
+    err = raises(ha_stubs.HomeAssistantError, reset_call, entity)
+    assert err.translation_key == "auth_failed"
+    assert len(SESSION.posts) == 1
+
+
+def test_reset_registered():
+    registry = sys.modules["homeassistant.helpers.service"].registered
+    registry.clear()
+    asyncio.run(integration.async_setup(None, {}))
+    registered = {name: kwargs for _domain, name, kwargs in registry}
+    assert registered["reset_temporary_temperature"]["entity_domain"] == "climate"
+    assert registered["reset_temporary_temperature"]["func"] == "async_reset_temporary_temperature"
+    assert registered["reset_temporary_temperature"]["schema"] == {}
 
 
 def run(namespace):

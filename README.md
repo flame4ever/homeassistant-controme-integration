@@ -15,8 +15,13 @@ Home Assistant integration for Controme heating systems. This integration allows
 - Humidity monitoring
 - Return temperature sensors
 - Total offset display
+- Control deviation (current minus target temperature plus total offset)
+- Valve position from the room outputs (disabled by default)
+- Further humidity and temperature sensors of a room (disabled by default)
 - Operation mode status
 - Transmission monitoring: shows when Controme last received sensor data and flags sensors that stopped transmitting
+- List of the Controme temperature scenes
+- Services for temporary temperatures, resetting them and single-room scenes
 - Automatic updates every 60 seconds
 
 ## Installation
@@ -60,14 +65,18 @@ For each room, the integration creates:
 - Shows current and target temperature
 - Shows current humidity
 - Shows the Controme operation mode as HVAC mode (heat, cool or off); it can only be changed in Controme
+- Attribute `scenes`: the scenes that `controme.activate_scene` would accept for this room (`[{id, name}]`, only scenes that contain exactly this room; the default scene "*" never appears). The attribute is missing until the scene list was read once.
 
 ### Sensors
 - Current Temperature
 - Target Temperature
 - Humidity
 - Return Temperature (if available)
-- Total Offset
+- Total Offset (unit °C as before, although it is a difference; changing the unit would break the long-term statistics)
 - Operation Mode
+- **Control Deviation** (`sensor.controme_<room>_control_deviation`, unit K, device class temperature difference): current temperature minus target temperature plus total offset, rounded to 0.01 K. Negative means too cold. Calculated from the room data without an extra request; only created for rooms with current and target temperature. A missing total offset counts as 0.
+- **Valve Position** (`sensor.controme_<room>_valve`, %, disabled by default): mean of the room's outputs from `/outs/`. The attribute `outputs` lists the single outputs (e.g. `{"6": 0, "7": 25}`). Only created for rooms with outputs. On relay systems the outputs are only 0 or 1, so the value is 0-1 "%" there; that is why the sensor is disabled by default.
+- **Further sensors** (`sensor.controme_<room>_sensor_<name>`, disabled by default): sensors of a room that are neither the room temperature sensor nor a return sensor, named after their Controme description, with the attributes `sensor_id` and `last_transmission`. Only sensors whose description clearly names humidity ("feuchte"/"humid", %) or temperature ("temp", °C) are created; all others are skipped (see the debug log), nothing is guessed. These sensors often only duplicate the existing humidity sensor of the room (e.g. "LuftFeuchte ..." sensors report the same value as the room humidity), which is why they are disabled by default.
 
 ### Transmission Monitoring (hub device)
 The Controme hub device gets three diagnostic entities, based on the "last transmission" time Controme reports for every sensor:
@@ -81,6 +90,13 @@ The values are recalculated every minute, so a sensor keeps aging and the proble
 
 **Time zone:** Controme reports local time without a time zone. The integration assumes the Home Assistant time zone, so it must be the same as the time zone of the Controme system, otherwise the times are off by the difference. In the repeated hour of the change from daylight saving time to standard time the timestamps are ambiguous; the first occurrence is used, so sensors can briefly appear one hour older. Times in the skipped hour of the change to daylight saving time (e.g. 02:30) are read as one hour later (03:30).
 
+### Temperature Scenes (hub device)
+- **Temperature scenes** (`sensor.controme_scenes`, diagnostic): number of scenes in Controme. The attribute `scenes` lists every scene with ID, name and the rooms it contains (`[{id, name, rooms}]`), e.g. to find the scene ID for `controme.activate_scene`. Every listed room belongs to the scene, whether the scene is currently active there or not.
+- The scene list is read during setup, then at most every 10 minutes and after `controme.activate_scene`. If it cannot be read, the last list is kept.
+
+### Hub Device Information
+If the Controme system reports its software date, branch and hardware via `/info/`, they are shown as software and hardware version of the hub device. Many firmwares report nothing there; then the device stays as it is. CPU load, temperature and uptime of the Controme system are not available through the API.
+
 ## Services
 
 ### `controme.set_temporary_temperature`
@@ -92,7 +108,7 @@ Please note:
 - The duration is only approximate. In a test the temporary value ended earlier than requested.
 - Setting the temperature normally (`climate.set_temperature`) ends the temporary value.
 - The Controme API reports no status of the temporary mode (no end time, no permanent target temperature). The new value is shown right away and confirmed by a refresh about 10 seconds later. The attributes `temporary_mode`, `temporary_until` and `permanent_target_temperature` only appear if a Controme firmware reports these documented fields.
-- There is no service to cancel a temporary temperature; set the temperature normally instead.
+- To end a temporary temperature, use `controme.reset_temporary_temperature` (only with firmwares that report the permanent target temperature) or set the temperature normally.
 
 ```yaml
 action: controme.set_temporary_temperature
@@ -103,6 +119,18 @@ data:
   duration: 60
 ```
 
+### `controme.reset_temporary_temperature`
+Ends a temporary temperature of the selected Controme climate entities, one request per room. Controme has no reset call, but a normal target temperature ends the temporary value; so the service sends the permanent target temperature that Controme reports for the room (`perm_solltemperatur`) again. The permanent value itself does not change.
+- No fields.
+- If Controme does not report a permanent target temperature for the room, nothing is sent and an error is shown. The tested firmware does not report it, so there the service always shows this error; set the temperature normally instead.
+- If Controme reports that the room has no temporary temperature, nothing is sent.
+
+```yaml
+action: controme.reset_temporary_temperature
+target:
+  entity_id: climate.controme_living_room
+```
+
 ### `controme.activate_scene`
 Activates a Controme temperature scene for the room of the selected climate entity. For safety, only scenes that contain **exactly this one room** are activated:
 - `scene_id` (required): ID of the scene in Controme (1 or higher)
@@ -110,10 +138,12 @@ Activates a Controme temperature scene for the room of the selected climate enti
 
 How it works:
 - Before anything is sent, the scene list of Controme is read. A scene contains all rooms it lists (rooms switched off in the scene in Controme are not listed); whether the scene is currently active in a room does not matter.
+- The duration is not reliable on the tested firmware: a scene with a duration of 2 minutes was still active after 3.5 minutes. Similar to the temporary temperature, treat it as approximate.
 - The listed room is matched by its name "Floor / Room" (compared case-insensitively, also with umlauts). The scene is only sent if it lists exactly one room, this room is the room of the selected entity and its name is unique in Controme.
 - Scenes for several rooms, for example the default scene "*", are refused on purpose, as are unknown scene IDs and other rooms. In these cases nothing is sent and a translated error is shown.
 - The request always contains the room ID, but the live test showed that Controme applies a scene to all rooms it lists, regardless of the room ID. The protection of the other rooms therefore relies only on the check above. If Controme reports that the scene was applied to other rooms as well, an error with these room names is shown and a warning is logged.
 - To use a scene for one room, create a scene in Controme that contains only this room. Selecting several climate entities means one check and one request per room.
+- The attribute `scenes` of a climate entity lists the scenes this check accepts for the room; `sensor.controme_scenes` lists all scenes.
 
 ```yaml
 action: controme.activate_scene
@@ -136,7 +166,12 @@ data:
 - Several Controme systems with the same haus_id are not supported. The IDs of devices and entities are built from haus_id, floor and room, so a second system with the same haus_id would collide with the first one. The haus_id (usually 1, sometimes 2) is entered during setup.
 - The HVAC mode (Controme operation mode) cannot be switched from Home Assistant. The firmware tested rejects the documented API call for it (HTTP 400).
 - Controme scenes can only be activated if they contain exactly one room (see `controme.activate_scene`). Scenes for several rooms or all rooms are refused, there are no scene entities.
-- The duration of a temporary temperature is only approximate, and the API reports no status of the temporary mode. There is no separate service to cancel it; setting the temperature normally ends it.
+- The duration of a temporary temperature is only approximate, and the API reports no status of the temporary mode. `controme.reset_temporary_temperature` only works with firmwares that report the permanent target temperature; setting the temperature normally always ends it.
+- Heating programs (schedules) cannot be switched or shown: the API has no call for it. Scenes are the alternative.
+- CPU load, temperature and uptime of the Controme system are not available through the API. Software and hardware version are only shown if the firmware reports them.
+- The valve position cannot tell relay outputs (0/1) from valve positions (0-100); the meaning depends on the Controme hardware. Outputs are read only, they cannot be set.
+- Further room sensors are only created if their description clearly names humidity or temperature. Other sensor types (e.g. of a room controller or a wireless thermometer) are not created.
+- The total offset keeps the unit °C (with the temperature device class) for compatibility; for Fahrenheit users the converted value of this difference is not meaningful. The control deviation uses K with the device class for temperature differences, so Home Assistant converts it correctly as a difference.
 - Floors without rooms and rooms without their own ID are shown, but neither a target temperature nor a temporary temperature can be set for them.
 - The transmission monitoring entities use the haus_id in their IDs as well (e.g. `1_transmission_problem`), so they are affected by the same haus_id limitation.
 

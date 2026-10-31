@@ -13,6 +13,8 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 REQUEST_TIMEOUT = ClientTimeout(total=10)  # 10 Sekunden Timeout
+# Optional reads (system info, scene list) must not delay setup or updates for long
+SHORT_REQUEST_TIMEOUT = ClientTimeout(total=5)
 # Responses are only logged shortened
 MAX_LOGGED_RESPONSE = 200
 
@@ -39,11 +41,18 @@ def scenes_read_url(base_url: str, house_id: Any) -> str:
     return f"{base_url.rstrip('/')}/get/json/v1/{house_id}/temperaturszenen/"
 
 
-async def async_get_json(hass: HomeAssistant, endpoint: str) -> Optional[Any]:
+def info_read_url(base_url: str, house_id: Any) -> str:
+    """Return the read URL of the system info (hw, sw-date, branch; empty on some firmwares)."""
+    return f"{base_url.rstrip('/')}/get/json/v1/{house_id}/info/"
+
+
+async def async_get_json(
+    hass: HomeAssistant, endpoint: str, timeout: ClientTimeout = REQUEST_TIMEOUT
+) -> Optional[Any]:
     """GET JSON from the read API (no credentials), returning None on errors."""
     session = async_get_clientsession(hass)
     try:
-        async with session.get(endpoint, timeout=REQUEST_TIMEOUT) as response:
+        async with session.get(endpoint, timeout=timeout) as response:
             if response.status != 200:
                 _LOGGER.debug("Controme read failed: URL=%s, status=%s", endpoint, response.status)
                 return None

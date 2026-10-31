@@ -111,6 +111,18 @@
             },
             "stale_sensors": {
                 "name": "Veraltete Sensoren"
+            },
+            "control_deviation": {
+                "name": "Regelabweichung"
+            },
+            "valve": {
+                "name": "Ventilstellung"
+            },
+            "room_sensor": {
+                "name": "{sensor}"
+            },
+            "scenes": {
+                "name": "Temperaturszenen"
             }
         },
         "binary_sensor": {
@@ -133,6 +145,10 @@
                     "description": "Ungefähre Dauer in Minuten (1-1440). Ohne Dauer verwendet Controme seine Standarddauer."
                 }
             }
+        },
+        "reset_temporary_temperature": {
+            "name": "Temporäre Temperatur zurücksetzen",
+            "description": "Beendet eine temporäre Temperatur der ausgewählten Controme-Räume, indem die von Controme gemeldete dauerhafte Solltemperatur erneut gesendet wird, jeden Raum einzeln. Funktioniert nur, wenn die Controme-Firmware die dauerhafte Solltemperatur meldet; sonst wird nichts gesendet und ein Fehler angezeigt."
         },
         "activate_scene": {
             "name": "Szene aktivieren",
@@ -179,6 +195,9 @@
         },
         "scene_applied_to_other_rooms": {
             "message": "Controme meldet, dass Szene {scene_id} auch in anderen Räumen angewendet wurde: {rooms}. Bitte prüfen Sie diese Räume in Controme."
+        },
+        "temporary_reset_unavailable": {
+            "message": "Die temporäre Temperatur von Raum-ID {room_id} kann nicht zurückgesetzt werden, weil Controme keine dauerhafte Solltemperatur meldet. Es wurde nichts gesendet; setzen Sie die Temperatur stattdessen normal."
         }
     }
 }

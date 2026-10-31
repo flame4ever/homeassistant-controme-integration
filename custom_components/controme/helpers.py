@@ -1,5 +1,6 @@
 """Helper functions for Controme integration."""
 import asyncio
+import math
 import re
 import logging
 from datetime import datetime, timedelta
@@ -107,6 +108,71 @@ def check_scene_for_room(
         return "scene_room_ambiguous", {"room": target_label}
     return None
 
+def _info_text(value: Any) -> Optional[str]:
+    """Return a non-empty text of an /info/ field (string or number), else None."""
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return None
+    text = str(value).strip()
+    return text or None
+
+def hub_versions(info: Any) -> Dict[str, str]:
+    """Return sw_version/hw_version for the hub device from /info/, only for reported fields.
+
+    sw_version is "sw-date", followed by " (branch)" if a branch is reported.
+    Many firmwares answer {}, then nothing is returned and the device stays as it is.
+    """
+    if not isinstance(info, dict):
+        return {}
+    versions = {}
+    sw_date = _info_text(info.get("sw-date"))
+    if sw_date:
+        branch = _info_text(info.get("branch"))
+        versions["sw_version"] = f"{sw_date} ({branch})" if branch else sw_date
+    hardware = _info_text(info.get("hw"))
+    if hardware:
+        versions["hw_version"] = hardware
+    return versions
+
+def scene_int_id(scene: Any) -> Optional[int]:
+    """Return the ID of a scene entry as int (like check_scene_for_room reads it), else None."""
+    if not isinstance(scene, dict) or isinstance(scene.get("id"), bool):
+        return None
+    try:
+        return int(scene.get("id"))
+    except (TypeError, ValueError):
+        return None
+
+def scene_name(scene: Dict[str, Any], scene_id: Any) -> str:
+    """Return the scene name ("Name" in /temperaturszenen/), falling back to the ID."""
+    return str(scene.get("Name") or scene.get("name") or scene_id)
+
+def scene_summaries(scenes: Any) -> List[Dict[str, Any]]:
+    """Return [{id, name, rooms}] for the scene list; rooms are the listed "Etage / Raum" names.
+
+    Every listed room belongs to the scene, "active" is ignored.
+    """
+    summaries = []
+    for scene in scenes if isinstance(scenes, list) else []:
+        if not isinstance(scene, dict):
+            continue
+        rooms = scene.get("raeume")
+        summaries.append({
+            "id": scene.get("id"),
+            "name": scene_name(scene, scene.get("id")),
+            "rooms": [room["name"] for room in rooms if isinstance(room, dict)
+                      and isinstance(room.get("name"), str)] if isinstance(rooms, list) else [],
+        })
+    return summaries
+
+def scenes_for_room(scenes: Any, target_label: str, all_labels: List[str]) -> List[Dict[str, Any]]:
+    """Return [{id, name}] of the scenes check_scene_for_room allows for the target room."""
+    allowed = []
+    for scene in scenes if isinstance(scenes, list) else []:
+        scene_id = scene_int_id(scene)
+        if scene_id is not None and check_scene_for_room(scenes, scene_id, target_label, all_labels) is None:
+            allowed.append({"id": scene_id, "name": scene_name(scene, scene_id)})
+    return allowed
+
 def is_synthetic_room(data: Optional[List[Dict[str, Any]]], room: Dict[str, Any]) -> bool:
     """Return True if the room has no own room ID (room-less floor or room without ID)."""
     return room.get("id") is None or any(floor is room for floor in data or [])
@@ -121,6 +187,39 @@ def is_return_sensor(description: Optional[str]) -> bool:
         return True
     return re.search(r"rücklauf|\breturn\b", description, re.IGNORECASE) is not None
 
+# Further room sensors are only created if their description clearly names the quantity
+ROOM_SENSOR_HUMIDITY = re.compile(r"feuchte|humid", re.IGNORECASE)
+# "temp" also matches "Temperatur" and "temperature"
+ROOM_SENSOR_TEMPERATURE = re.compile(r"temp", re.IGNORECASE)
+ROOM_SENSOR_KIND_HUMIDITY = "humidity"
+ROOM_SENSOR_KIND_TEMPERATURE = "temperature"
+
+def classify_room_sensor(sensor: Any) -> Optional[str]:
+    """Return "humidity" or "temperature" for a further sensor of a room, else None.
+
+    The room temperature sensor (its value is "temperatur") and return sensors
+    have their own entities. Descriptions that match both or neither quantity are
+    not classified, nothing is guessed.
+    """
+    if not isinstance(sensor, dict):
+        return None
+    name = sensor.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    room_sensor = sensor.get("raumtemperatursensor")
+    if room_sensor is True or (isinstance(room_sensor, str) and room_sensor.strip().lower() == "true"):
+        return None
+    description = sensor.get("beschreibung")
+    if not isinstance(description, str) or is_return_sensor(description):
+        return None
+    humidity = ROOM_SENSOR_HUMIDITY.search(description) is not None
+    temperature = ROOM_SENSOR_TEMPERATURE.search(description) is not None
+    if humidity and not temperature:
+        return ROOM_SENSOR_KIND_HUMIDITY
+    if temperature and not humidity:
+        return ROOM_SENSOR_KIND_TEMPERATURE
+    return None
+
 def to_float(value: Any) -> Optional[float]:
     """Convert an API value to float, returning None for missing or non-numeric values."""
     if value is None or isinstance(value, bool):
@@ -129,6 +228,47 @@ def to_float(value: Any) -> Optional[float]:
         return float(value)
     except (ValueError, TypeError):
         return None
+
+def control_deviation(room: Dict[str, Any]) -> Optional[float]:
+    """Return temperatur - solltemperatur + total_offset in K (2 decimals), negative = too cold.
+
+    A missing total_offset counts as 0; a present but non-numeric one gives None,
+    like a non-numeric current or target temperature.
+    """
+    current = to_float(room.get("temperatur"))
+    target = to_float(room.get("solltemperatur"))
+    offset = to_float(room["total_offset"]) if "total_offset" in room else 0.0
+    if current is None or target is None or offset is None:
+        return None
+    deviation = current - target + offset
+    # "nan" or "inf" strings are numeric for float(), but no usable reading
+    return round(deviation, 2) if math.isfinite(deviation) else None
+
+def normalize_outputs(ausgang: Any) -> Dict[str, Any]:
+    """Return the outputs of a room with stripped keys (/outs/ reports e.g. " 6").
+
+    If two keys are equal after stripping, the last one wins.
+    """
+    if not isinstance(ausgang, dict):
+        return {}
+    outputs = {}
+    for key, value in ausgang.items():
+        stripped = str(key).strip()
+        if stripped in outputs:
+            _LOGGER.debug("Output %r reported twice after stripping, using the last value", stripped)
+        outputs[stripped] = value
+    return outputs
+
+def valve_position(outputs: Dict[str, Any]) -> Optional[float]:
+    """Return the mean of the numeric output values (2 decimals), or None without any.
+
+    Booleans and non-numeric values are ignored. On relay systems the values are 0/1.
+    """
+    values = [to_float(value) for value in outputs.values()]
+    values = [value for value in values if value is not None and math.isfinite(value)]
+    if not values:
+        return None
+    return round(sum(values) / len(values), 2)
 
 def parse_transmission(value: Any) -> Optional[datetime]:
     """Parse a Controme transmission timestamp, returning None for empty or unknown values.

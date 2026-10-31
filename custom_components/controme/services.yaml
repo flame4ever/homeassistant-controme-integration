@@ -22,6 +22,11 @@ set_temporary_temperature:
           step: 1
           unit_of_measurement: min
           mode: box
+reset_temporary_temperature:
+  target:
+    entity:
+      integration: controme
+      domain: climate
 activate_scene:
   target:
     entity:
