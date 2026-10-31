@@ -133,20 +133,6 @@
                     "description": "Dauer in Minuten (1-1440). Ohne Dauer verwendet Controme seine Standarddauer."
                 }
             }
-        },
-        "activate_scene": {
-            "name": "Szene aktivieren",
-            "description": "Aktiviert eine Controme-Temperaturszene nur für die ausgewählten Räume. Jeder ausgewählte Raum wird einzeln mit seiner Raum-ID gesendet, nie für alle Räume.",
-            "fields": {
-                "scene_id": {
-                    "name": "Szenen-ID",
-                    "description": "ID der Controme-Temperaturszene."
-                },
-                "duration": {
-                    "name": "Dauer",
-                    "description": "Dauer in Minuten (1-1440). Ohne Dauer bleibt die Szene bis zum nächsten Wechsel aktiv."
-                }
-            }
         }
     },
     "exceptions": {
@@ -155,9 +141,6 @@
         },
         "write_failed": {
             "message": "Controme hat die Änderung nicht übernommen ({error})."
-        },
-        "unknown_scene": {
-            "message": "Controme hat keine Szene mit der ID {scene_id}. Bekannte Szenen: {scenes}."
         },
         "not_a_room": {
             "message": "Raum-ID {room_id} ist kein echter Controme-Raum (Etage ohne Räume oder Raum ohne ID), daher kann dafür nichts gesetzt werden."

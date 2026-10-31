@@ -13,26 +13,19 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import service
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
-from .api import (
-    async_get_json,
-    async_post,
-    room_write_url,
-    scene_write_url,
-    scenes_read_url,
-)
+from .api import async_post, room_write_url
 from .coordinator import ContromeConfigEntry
 from .helpers import (
     find_room,
     is_synthetic_room,
     iter_rooms,
     parse_mode_end,
-    parse_scenes,
     to_float,
 )
 from .const import (
@@ -280,37 +273,4 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
 
         self._attr_target_temperature = temperature
         self.async_write_ha_state()
-        await self.coordinator.async_request_refresh()
-
-    async def async_activate_scene(self, scene_id: int, duration: int | None = None) -> None:
-        """Activate a Controme scene for this room only (service controme.activate_scene).
-
-        The scene is always sent with the room_id of this entity; without a
-        duration it stays active until the next switch.
-        """
-        self._check_entry_loaded()
-        self._check_real_room()
-        data = await async_get_json(self.hass, scenes_read_url(self._base_url, self._house_id))
-        if data is None:
-            # Without the scene list the ID cannot be checked, so nothing is sent
-            raise HomeAssistantError(
-                translation_domain=DOMAIN,
-                translation_key="write_failed",
-                translation_placeholders={"error": "scene list not available"},
-            )
-        scenes = parse_scenes(data)
-        if scene_id not in scenes:
-            raise ServiceValidationError(
-                translation_domain=DOMAIN,
-                translation_key="unknown_scene",
-                translation_placeholders={
-                    "scene_id": str(scene_id),
-                    "scenes": ", ".join(f"{key} ({name})" for key, name in scenes.items()) or "-",
-                },
-            )
-
-        scene_data = {"room_id": str(self._room_id)}
-        if duration is not None:
-            scene_data["duration"] = str(duration)
-        await self._async_write(scene_write_url(self._base_url, self._house_id, scene_id), scene_data)
         await self.coordinator.async_request_refresh()

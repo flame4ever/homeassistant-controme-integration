@@ -133,20 +133,6 @@
                     "description": "Duration in minutes (1-1440). Without a duration Controme uses its default duration."
                 }
             }
-        },
-        "activate_scene": {
-            "name": "Activate scene",
-            "description": "Activates a Controme temperature scene for the selected rooms only. Each selected room is sent separately with its room ID, never for all rooms.",
-            "fields": {
-                "scene_id": {
-                    "name": "Scene ID",
-                    "description": "ID of the Controme temperature scene."
-                },
-                "duration": {
-                    "name": "Duration",
-                    "description": "Duration in minutes (1-1440). Without a duration the scene stays active until the next switch."
-                }
-            }
         }
     },
     "exceptions": {
@@ -155,9 +141,6 @@
         },
         "write_failed": {
             "message": "Controme did not accept the change ({error})."
-        },
-        "unknown_scene": {
-            "message": "Controme has no scene with ID {scene_id}. Known scenes: {scenes}."
         },
         "not_a_room": {
             "message": "Room ID {room_id} is not a real Controme room (floor without rooms or room without ID), so nothing can be set for it."

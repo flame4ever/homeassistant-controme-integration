@@ -41,22 +41,6 @@ def find_room(data: Optional[List[Dict[str, Any]]], floor_id: Any, room_id: Any)
             return room
     return None
 
-def parse_scenes(data: Any) -> Dict[int, str]:
-    """Return {scene ID: name} from a /temperaturszenen/ response, skipping invalid entries.
-
-    Controme names the field "Name" (capital N); entries without a usable ID are skipped.
-    """
-    scenes = {}
-    for scene in data if isinstance(data, list) else []:
-        if not isinstance(scene, dict) or isinstance(scene.get("id"), bool):
-            continue
-        try:
-            scene_id = int(scene.get("id"))
-        except (TypeError, ValueError):
-            continue
-        scenes[scene_id] = str(scene.get("Name") or scene.get("name") or scene_id)
-    return scenes
-
 def is_synthetic_room(data: Optional[List[Dict[str, Any]]], room: Dict[str, Any]) -> bool:
     """Return True if the room has no own room ID (room-less floor or room without ID)."""
     return room.get("id") is None or any(floor is room for floor in data or [])
