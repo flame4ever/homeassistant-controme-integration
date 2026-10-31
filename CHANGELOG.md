@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+- **Scenes** (#4): New service `controme.activate_scene` on the Controme climate entities (scene ID, optional approximate duration 1-1440 minutes). For safety only scenes that contain exactly the room of the selected entity are activated: the scene list is read first, the listed room is matched by its name "Floor / Room", and scenes for several rooms (e.g. "*"), unknown scenes, other rooms or ambiguous room names are refused with a translated error before anything is sent. The request always contains the room ID; if Controme reports that other rooms were affected, an error and a warning with the room names follow. There are no scene entities.
+
+### Under the Hood
+- The single-room write guard also accepts scene writes, but only with a numeric scene ID and a purely numeric `room_id`; paths are matched exactly (no trailing characters).
+- The refresh after a scene is delayed like after a temporary temperature.
+- Offline tests with a counting mock show that no request is sent for refused scenes.
+- Existing entity IDs, unique IDs and values are unchanged.
+
 ## 2.2.0 (2026-10-31)
 
 ### New Features
