@@ -16,6 +16,7 @@ import ha_stubs  # noqa: E402
 
 ha_stubs.install(timezone(timedelta(hours=1)))
 
+import custom_components.controme as integration  # noqa: E402
 from custom_components.controme import binary_sensor, climate, helpers, sensor  # noqa: E402
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -373,6 +374,106 @@ def test_room_sensor_prefix_never_collides_with_return():
     new = set(entity_ids(collect_entities(snapshot_data()))) - set(SNAPSHOT_230)
     assert "1_1_10_sensor_28_00_00_00_00_00_00_03" in new
     assert not any(uid.startswith("1_1_10_sensor_28_00_00_00_00_00_00_02") for uid in new)
+
+
+# S6-05: hub sw_version/hw_version from /info/
+SESSION = ha_stubs.SESSION
+FakeResponse = ha_stubs.FakeResponse
+
+
+def reset_session():
+    SESSION.posts.clear()
+    SESSION.gets.clear()
+    SESSION.get_timeouts.clear()
+    SESSION.post_responses.clear()
+    SESSION.get_responses.clear()
+
+
+def test_hub_versions_parsing():
+    assert helpers.hub_versions({}) == {}
+    for info in (None, [], "x", {"sw-date": "", "hw": "  "}, {"sw-date": True, "hw": None},
+                 {"branch": "stable"}):
+        assert helpers.hub_versions(info) == {}, info
+    assert helpers.hub_versions({"hw": "pi4", "sw-date": "2026-02-25", "branch": "stable_v2",
+                                 "os": "x", "fbi": 1}) == {
+        "sw_version": "2026-02-25 (stable_v2)", "hw_version": "pi4"}
+    assert helpers.hub_versions({"sw-date": "2026-02-25"}) == {"sw_version": "2026-02-25"}
+    assert helpers.hub_versions({"sw-date": 20260225, "branch": ""}) == {"sw_version": "20260225"}
+    assert helpers.hub_versions({"hw": "pi3"}) == {"hw_version": "pi3"}
+
+
+def test_hub_versions_request_never_fails():
+    cases = [
+        (FakeResponse(payload={}), {}),
+        (FakeResponse(payload={"hw": "pi4", "sw-date": "2026-02-25", "branch": "stable"}),
+         {"sw_version": "2026-02-25 (stable)", "hw_version": "pi4"}),
+        (TimeoutError(), {}),
+        (ha_stubs.ClientError("boom"), {}),
+        (FakeResponse(payload=ValueError("no JSON")), {}),
+        (FakeResponse(500), {}),
+        (FakeResponse(payload=["x"]), {}),
+    ]
+    for response, expected in cases:
+        reset_session()
+        SESSION.get_responses.append(response)
+        assert asyncio.run(integration.async_get_hub_versions(None, BASE + "/", "1")) == expected
+        assert SESSION.gets == ["http://controme.local/get/json/v1/1/info/"]
+        assert SESSION.get_timeouts[0].total == 5
+        assert SESSION.posts == []
+
+
+class FakeDeviceRegistry:
+    def __init__(self):
+        self.calls = []
+
+    def async_get_or_create(self, **kwargs):
+        self.calls.append(kwargs)
+        return type("Device", (), {"id": "hub-device"})()
+
+
+def run_setup_entry(info_response):
+    """Run async_setup_entry with a fake coordinator and device registry; return the registry."""
+    registry = FakeDeviceRegistry()
+    device_registry_module = sys.modules["homeassistant.helpers.device_registry"]
+
+    class SetupCoordinator(FakeCoordinator):
+        def __init__(self, hass, entry, base_url, house_id):
+            super().__init__(FIXTURE_DATA)
+
+        async def async_config_entry_first_refresh(self):
+            pass
+
+    class ConfigEntries:
+        async def async_forward_entry_setups(self, entry, platforms):
+            self.forwarded = platforms
+
+    entry = make_entry()
+    entry.add_update_listener = lambda listener: None
+    entry.async_on_unload = lambda func: None
+    hass = type("Hass", (), {"config_entries": ConfigEntries()})()
+    original = integration.ContromeDataUpdateCoordinator, getattr(device_registry_module, "async_get")
+    integration.ContromeDataUpdateCoordinator = SetupCoordinator
+    device_registry_module.async_get = lambda hass: registry
+    reset_session()
+    SESSION.get_responses.append(info_response)
+    try:
+        assert asyncio.run(integration.async_setup_entry(hass, entry)) is True
+    finally:
+        integration.ContromeDataUpdateCoordinator, device_registry_module.async_get = original
+    assert entry.runtime_data.hub_device_id == "hub-device"
+    return registry
+
+
+def test_setup_entry_with_and_without_info():
+    base = {"config_entry_id": "entry1", "identifiers": {("controme", "1")}, "manufacturer": "Controme",
+            "name": "Controme Home 1", "model": "Thermostat API"}
+    # {} (live), errors and broken JSON: the hub device is created exactly as in 2.3.0
+    for response in (FakeResponse(payload={}), TimeoutError(), FakeResponse(payload=ValueError("x")),
+                     ha_stubs.ClientError("x")):
+        registry = run_setup_entry(response)
+        assert registry.calls == [base], response
+    registry = run_setup_entry(FakeResponse(payload={"hw": "pi4", "sw-date": "2026-02-25"}))
+    assert registry.calls == [{**base, "sw_version": "2026-02-25", "hw_version": "pi4"}]
 
 
 def run(namespace):

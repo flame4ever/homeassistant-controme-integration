@@ -108,6 +108,31 @@ def check_scene_for_room(
         return "scene_room_ambiguous", {"room": target_label}
     return None
 
+def _info_text(value: Any) -> Optional[str]:
+    """Return a non-empty text of an /info/ field (string or number), else None."""
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return None
+    text = str(value).strip()
+    return text or None
+
+def hub_versions(info: Any) -> Dict[str, str]:
+    """Return sw_version/hw_version for the hub device from /info/, only for reported fields.
+
+    sw_version is "sw-date", followed by " (branch)" if a branch is reported.
+    Many firmwares answer {}, then nothing is returned and the device stays as it is.
+    """
+    if not isinstance(info, dict):
+        return {}
+    versions = {}
+    sw_date = _info_text(info.get("sw-date"))
+    if sw_date:
+        branch = _info_text(info.get("branch"))
+        versions["sw_version"] = f"{sw_date} ({branch})" if branch else sw_date
+    hardware = _info_text(info.get("hw"))
+    if hardware:
+        versions["hw_version"] = hardware
+    return versions
+
 def is_synthetic_room(data: Optional[List[Dict[str, Any]]], room: Dict[str, Any]) -> bool:
     """Return True if the room has no own room ID (room-less floor or room without ID)."""
     return room.get("id") is None or any(floor is room for floor in data or [])

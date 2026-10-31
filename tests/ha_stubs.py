@@ -152,6 +152,9 @@ class FakeResponse:
         return self._text
 
     async def json(self, content_type=None):
+        if isinstance(self._payload, BaseException):
+            # e.g. ValueError for a body that is no JSON
+            raise self._payload
         return self._payload
 
     async def __aenter__(self):
@@ -167,6 +170,7 @@ class FakeSession:
     def __init__(self):
         self.posts = []
         self.gets = []
+        self.get_timeouts = []
         self.post_responses = []
         self.get_responses = []
 
@@ -182,6 +186,7 @@ class FakeSession:
 
     def get(self, url, timeout=None):
         self.gets.append(url)
+        self.get_timeouts.append(timeout)
         return self._next(self.get_responses)
 
 
