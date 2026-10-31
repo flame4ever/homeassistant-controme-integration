@@ -121,9 +121,16 @@ def test_guard_blocks_writes_without_room():
         (f"{BASE}/set/json/v1/1/temperaturszenen/1/", {"room_id": ""}),
         (f"{BASE}/set/json/v1/1/temperaturszenen/1/", {"room_id": None}),
         (f"{BASE}/set/json/v1/1/temperaturszenen/1/", {"room_id": "1,2"}),
-        # Scenes are not supported at all any more, also not with a room_id
-        (f"{BASE}/set/json/v1/1/temperaturszenen/1/", {"room_id": "13"}),
+        (f"{BASE}/set/json/v1/1/temperaturszenen/1/", {"room_id": "abc"}),
+        (f"{BASE}/set/json/v1/1/temperaturszenen/1/", {"room_id": "-13"}),
+        (f"{BASE}/set/json/v1/1/temperaturszenen/1/", {"room_id": "13\n"}),
+        (f"{BASE}/set/json/v1/1/temperaturszenen/1/", {"room_id": " 13"}),
+        (f"{BASE}/set/json/v1/1/temperaturszenen/1/", {"room_id": "5_0"}),
+        (f"{BASE}/set/json/v1/1/temperaturszenen/1/", {"room_id": True}),
+        (f"{BASE}/set/json/v1/1/temperaturszenen/1/", {"room_id": ["13"]}),
+        (f"{BASE}/set/json/v1/1/temperaturszenen/x/", {"room_id": "13"}),
         (f"{BASE}/set/json/v1/1/temperaturszenen/", {"room_id": "13"}),
+        (f"{BASE}/set/json/v1/1/soll/13/\n", {"soll": "21.0"}),
         (f"{BASE}/set/json/v1/1/rooms/1_0/", {"action": "betriebsart", "value": "off"}),
         (f"{BASE}/set/json/v1/1/rooms/13/", {"action": "betriebsart", "value": "off"}),
         (f"{BASE}/set/json/v1/1/rooms/13/extra/", {"action": "betriebsart", "value": "off"}),
@@ -134,6 +141,25 @@ def test_guard_blocks_writes_without_room():
         err = raises(ha_stubs.HomeAssistantError, post, endpoint, data)
         assert (err.translation_domain, err.translation_key) == ("controme", "invalid_write_target")
     assert SESSION.posts == [], SESSION.posts
+
+
+# S4b-01: scene writes with a numeric room_id pass the guard, also with a path prefix
+def test_guard_allows_scene_with_room_id():
+    for base, room_id in ((BASE, "13"), (BASE, 13), ("http://host/controme", "13")):
+        reset()
+        url = api.scene_write_url(base, "1", 2)
+        post(url, {"room_id": room_id, "duration": "2"}, base_url=base)
+        assert SESSION.posts[0]["url"] == f"{base}/set/json/v1/1/temperaturszenen/2/"
+        assert SESSION.posts[0]["data"]["room_id"] == room_id
+    reset()
+    for base, endpoint, data in (
+        ("http://host/controme", "http://host/controme/set/json/v1/1/temperaturszenen/2/", {}),
+        ("http://host/controme", "http://host/controme/set/json/v1/1/temperaturszenen/2/", {"room_id": ""}),
+        ("http://host", "http://host/controme/set/json/v1/1/temperaturszenen/2/", {"room_id": "13"}),
+    ):
+        err = raises(ha_stubs.HomeAssistantError, post, endpoint, data, base)
+        assert err.translation_key == "invalid_write_target"
+    assert SESSION.posts == []
 
 
 # R8-04: guard relative to the base URL (path prefix)
@@ -406,10 +432,6 @@ def test_no_scene_service_or_code():
     assert [name for _domain, name, _kwargs in registry] == ["set_temporary_temperature"]
     assert "scene" not in [str(platform).lower() for platform in integration.PLATFORMS]
     assert "async_activate_scene" not in vars(climate.ContromeClimate)
-    package = ha_stubs.ROOT / "custom_components" / "controme"
-    for path in list(package.glob("*.py")) + [package / "services.yaml"]:
-        assert "temperaturszenen" not in path.read_text(encoding="utf-8").replace(
-            "temperaturszenen/ or rooms/", ""), path.name
 
 
 def run(namespace):
