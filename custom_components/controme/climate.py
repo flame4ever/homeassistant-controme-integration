@@ -1,6 +1,7 @@
 """Support for Controme climate devices."""
 import json
 import logging
+import math
 from typing import Any
 
 from homeassistant.components.climate import (
@@ -83,6 +84,12 @@ def betriebsart_to_hvac_mode(betriebsart: Any) -> HVACMode:
             return hvac_mode
     _LOGGER.debug("Unknown betriebsart %r, using heating", betriebsart)
     return HVACMode.HEAT
+
+def temporary_mode(value: Any) -> bool:
+    """Interpret "is_temporary_mode" (bool, or strings like "true"/"false")."""
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes")
+    return bool(value)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, async_add_entities):
     """Set up the Controme climate platform."""
@@ -167,10 +174,7 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         """Return the temporary mode attributes, only for fields /temps/ actually reports."""
         attributes = {}
         if "is_temporary_mode" in data:
-            value = data["is_temporary_mode"]
-            if isinstance(value, str):
-                value = value.strip().lower() in ("true", "1", "yes")
-            attributes["temporary_mode"] = bool(value)
+            attributes["temporary_mode"] = temporary_mode(data["is_temporary_mode"])
         if "mode_end_datetime" in data:
             attributes["temporary_until"] = parse_mode_end(data["mode_end_datetime"])
         if "perm_solltemperatur" in data:
@@ -287,6 +291,37 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         # Show the value right away; Controme reports it only after a few seconds,
         # an immediate refresh would jump back to the old value
         self._attr_target_temperature = temperature
+        self.async_write_ha_state()
+        self._schedule_delayed_refresh()
+
+    async def async_reset_temporary_temperature(self) -> None:
+        """End a temporary temperature (service controme.reset_temporary_temperature).
+
+        Controme has no reset call; a normal soll write ends the temporary value.
+        The permanent target temperature reported by Controme ("perm_solltemperatur")
+        is sent again, so the permanent value itself does not change. Without it
+        nothing is sent.
+        """
+        self._check_entry_loaded()
+        self._check_real_room()
+        room = find_room(self.coordinator.data, self._floor_id, self._room_id) or {}
+        if "is_temporary_mode" in room and not temporary_mode(room["is_temporary_mode"]):
+            _LOGGER.debug("Room %s has no temporary temperature, nothing to reset", self._room_id)
+            return
+        permanent = to_float(room.get("perm_solltemperatur"))
+        if permanent is None or not math.isfinite(permanent):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="temporary_reset_unavailable",
+                translation_placeholders={"room_id": str(self._room_id)},
+            )
+
+        await self._async_write(
+            room_write_url(self._base_url, self._house_id, "soll", self._room_id),
+            {"soll": str(permanent)},
+        )
+        # Controme reports the end of the temporary value only after some seconds
+        self._attr_target_temperature = permanent
         self.async_write_ha_state()
         self._schedule_delayed_refresh()
 

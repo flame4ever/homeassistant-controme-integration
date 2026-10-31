@@ -24,6 +24,7 @@ MAX_STALE_THRESHOLD: Final = 1440
 # Entity services of the climate entities
 SERVICE_SET_TEMPORARY_TEMPERATURE: Final = "set_temporary_temperature"
 SERVICE_ACTIVATE_SCENE: Final = "activate_scene"
+SERVICE_RESET_TEMPORARY_TEMPERATURE: Final = "reset_temporary_temperature"
 ATTR_DURATION: Final = "duration"
 ATTR_SCENE_ID: Final = "scene_id"
 # Same limits as the climate entities
