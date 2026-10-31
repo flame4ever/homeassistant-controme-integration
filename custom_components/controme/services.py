@@ -10,7 +10,9 @@ from homeassistant.helpers import service
 from .const import (
     DOMAIN,
     SERVICE_SET_TEMPORARY_TEMPERATURE,
+    SERVICE_ACTIVATE_SCENE,
     ATTR_DURATION,
+    ATTR_SCENE_ID,
     MIN_TEMPERATURE,
     MAX_TEMPERATURE,
     TEMPERATURE_STEP,
@@ -47,8 +49,27 @@ def validate_duration(value: Any) -> int:
     return int(duration)
 
 
+def validate_scene_id(value: Any) -> int:
+    """Return the scene ID as positive int."""
+    if isinstance(value, bool):
+        raise vol.Invalid("scene_id must be a positive whole number")
+    try:
+        scene_id = float(value)
+    except (TypeError, ValueError) as err:
+        raise vol.Invalid("scene_id must be a positive whole number") from err
+    if scene_id % 1 or scene_id < 1:
+        raise vol.Invalid("scene_id must be a positive whole number")
+    return int(scene_id)
+
+
 SET_TEMPORARY_TEMPERATURE_SCHEMA = {
     vol.Required(ATTR_TEMPERATURE): validate_temperature,
+    vol.Optional(ATTR_DURATION): validate_duration,
+}
+
+# The scene is always sent with the room of the target entity, never for all rooms
+ACTIVATE_SCENE_SCHEMA = {
+    vol.Required(ATTR_SCENE_ID): validate_scene_id,
     vol.Optional(ATTR_DURATION): validate_duration,
 }
 
@@ -63,4 +84,12 @@ def async_setup_services(hass: HomeAssistant) -> None:
         entity_domain=CLIMATE_DOMAIN,
         schema=SET_TEMPORARY_TEMPERATURE_SCHEMA,
         func="async_set_temporary_temperature",
+    )
+    service.async_register_platform_entity_service(
+        hass,
+        DOMAIN,
+        SERVICE_ACTIVATE_SCENE,
+        entity_domain=CLIMATE_DOMAIN,
+        schema=ACTIVATE_SCENE_SCHEMA,
+        func="async_activate_scene",
     )

@@ -15,7 +15,7 @@ import ha_stubs  # noqa: E402
 ha_stubs.install(timezone(timedelta(hours=1)))
 
 import custom_components.controme as integration  # noqa: E402
-from custom_components.controme import api, climate, services  # noqa: E402
+from custom_components.controme import api, climate, helpers, services  # noqa: E402
 
 SESSION = ha_stubs.SESSION
 HVACMode = ha_stubs.HVACMode
@@ -317,6 +317,10 @@ def test_services_yaml_matches_schema():
     assert fields["duration"]["selector"]["number"]["max"] == 1440
     assert data["set_temporary_temperature"]["target"]["entity"] == {
         "integration": "controme", "domain": "climate"}
+    assert set(data) == {"set_temporary_temperature", "activate_scene"}
+    assert data["activate_scene"]["target"]["entity"] == {"integration": "controme", "domain": "climate"}
+    assert set(data["activate_scene"]["fields"]) == {"scene_id", "duration"}
+    assert data["activate_scene"]["fields"]["scene_id"]["required"] is True
 
 
 def test_temporary_attributes_only_when_reported():
@@ -332,6 +336,80 @@ def test_temporary_attributes_only_when_reported():
     entity, _ = make_climate({"id": 13, "name": "R", "is_temporary_mode": "false",
                               "mode_end_datetime": ""})
     assert entity.extra_state_attributes == {"temporary_mode": False, "temporary_until": None}
+
+
+# S4-04: scenes
+LIVE_SCENES = [{"id": 1, "Name": "*", "raeume": [
+    {"active": True, "temperatur": 22.0, "name": "Keller / Sportzimmer"}]}]
+
+
+def test_parse_scenes():
+    assert helpers.parse_scenes(LIVE_SCENES) == {1: "*"}
+    messy = [{"id": "2", "name": "Lower"}, {"id": 3}, {"Name": "no id"}, {"id": True, "Name": "bool"},
+             {"id": "x", "Name": "bad"}, None, "text", {"id": 4, "Name": ""}]
+    assert helpers.parse_scenes(messy) == {2: "Lower", 3: "3", 4: "4"}
+    for data in (None, {}, "x", 1):
+        assert helpers.parse_scenes(data) == {}
+
+
+def test_activate_scene_with_room_id():
+    for duration, expected in ((None, {"room_id": "13"}), (2, {"room_id": "13", "duration": "2"})):
+        reset()
+        entity, coordinator = make_climate()
+        SESSION.get_responses.append(FakeResponse(payload=LIVE_SCENES))
+        if duration is None:
+            asyncio.run(entity.async_activate_scene(scene_id=1))
+        else:
+            asyncio.run(entity.async_activate_scene(scene_id=1, duration=duration))
+        assert SESSION.gets == ["http://controme.local/get/json/v1/1/temperaturszenen/"]
+        assert SESSION.posts[0]["url"] == "http://controme.local/set/json/v1/1/temperaturszenen/1/"
+        assert SESSION.posts[0]["data"] == {**expected, "user": USER, "password": PASSWORD}
+        assert coordinator.refreshes == 1
+
+
+def test_activate_unknown_scene():
+    reset()
+    entity, _ = make_climate()
+    SESSION.get_responses.append(FakeResponse(payload=LIVE_SCENES))
+    err = raises(ha_stubs.ServiceValidationError, asyncio.run, entity.async_activate_scene(scene_id=99))
+    assert err.translation_key == "unknown_scene"
+    assert err.translation_placeholders == {"scene_id": "99", "scenes": "1 (*)"}
+    assert SESSION.posts == []
+
+
+def test_activate_scene_list_unavailable():
+    reset()
+    entity, _ = make_climate()
+    SESSION.get_responses.append(FakeResponse(500))
+    err = raises(ha_stubs.HomeAssistantError, asyncio.run, entity.async_activate_scene(scene_id=1))
+    assert err.translation_key == "write_failed"
+    assert SESSION.posts == []
+
+
+def test_activate_scene_synthetic_room():
+    reset()
+    entity, _ = make_climate({"name": "Floor", "temperatur": 20.0})
+    raises(ha_stubs.ServiceValidationError, asyncio.run, entity.async_activate_scene(scene_id=1))
+    assert SESSION.posts == [] and SESSION.gets == []
+
+
+def test_service_scene_id_limits():
+    for value, expected in ((1, 1), ("2", 2), (99.0, 99)):
+        assert services.validate_scene_id(value) == expected
+    for value in (0, -1, 1.5, "abc", None, True):
+        raises(ha_stubs.Invalid, services.validate_scene_id, value)
+
+
+def test_activate_scene_registered():
+    registry = sys.modules["homeassistant.helpers.service"].registered
+    registry.clear()
+    asyncio.run(integration.async_setup(None, {}))
+    registered = {name: kwargs for _domain, name, kwargs in registry}
+    assert registered["activate_scene"]["entity_domain"] == "climate"
+    assert registered["activate_scene"]["func"] == "async_activate_scene"
+    # No scene platform and no service without a climate target
+    assert set(registered) == {"set_temporary_temperature", "activate_scene"}
+    assert "scene" not in [str(platform).lower() for platform in integration.PLATFORMS]
 
 
 def run(namespace):
