@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+- **HVAC Mode** (#4, #22): The HVAC mode of the climate entities can now be switched per room between heat and off (also via turn on/turn off), so "Off" is functional again. After switching, the room is read back after 2, 5 and 10 seconds; if Controme still reports a different mode, a translated error with the reported value is shown. Cooling and "on" are never sent; a reported cooling mode is still displayed.
+- **Temporary Temperature** (#3): New service `controme.set_temporary_temperature` (temperature 5-30 °C in steps of 0.5, optional duration 1-1440 minutes, otherwise the Controme default duration). The attributes `temporary_mode`, `temporary_until` and `permanent_target_temperature` appear only if Controme reports these fields.
+- **Scenes** (#4): New service `controme.activate_scene` on the climate entities (scene ID, optional duration). It is always sent for the room of each selected entity, unknown scene IDs are rejected. There are no scene entities and no way to activate a scene for all rooms.
+
+### Changes
+- **Behavior**: `climate.set_hvac_mode` used to reject every change; it now writes to Controme. The climate entities offer heat and off (plus a different reported mode) and support turn on/turn off.
+- **Errors**: All errors are translated (English and German), including wrong credentials ("Authentication failed") and failed writes.
+- Existing entity IDs, unique IDs and values are unchanged.
+
+### Under the Hood
+- Central write helper for all Controme writes with form encoding, timeout and error mapping; it refuses every write without a single room ID (e.g. `/rooms/` without ID or a scene without `room_id`) before sending. Credentials are never logged.
+- Services are registered in `async_setup` and check that the config entry is loaded; `services.yaml` with selectors and translations.
+- Offline tests for URLs, request bodies, the single-room guard, error mapping, read back and service limits (`tests/test_write_actions.py`).
+
 ## 2.1.0 (2026-10-30)
 
 ### New Features

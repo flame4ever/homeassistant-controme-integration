@@ -51,7 +51,7 @@ For each room, the integration creates:
 - Controls room temperature
 - Shows current and target temperature
 - Shows current humidity
-- Supports heating mode
+- HVAC mode heat or off can be switched per room (also via turn on/turn off). After switching, the room is read back after 2, 5 and 10 seconds; if Controme still reports the old mode, an error is shown. A different mode reported by Controme (e.g. cooling) is displayed but cannot be selected.
 
 ### Sensors
 - Current Temperature
@@ -73,6 +73,33 @@ The values are recalculated every minute, so a sensor keeps aging and the proble
 
 **Time zone:** Controme reports local time without a time zone. The integration assumes the Home Assistant time zone, so it must be the same as the time zone of the Controme system, otherwise the times are off by the difference. In the repeated hour of the change from daylight saving time to standard time the timestamps are ambiguous; the first occurrence is used, so sensors can briefly appear one hour older. Times in the skipped hour of the change to daylight saving time (e.g. 02:30) are read as one hour later (03:30).
 
+## Services
+
+Both services target Controme climate entities. Every selected climate entity is one request for exactly that room; selecting several entities sends one request per room. There is no way to address all rooms at once.
+
+### `controme.set_temporary_temperature`
+Sets a temporary target temperature for the selected rooms.
+- `temperature` (required): 5-30 °C in steps of 0.5
+- `duration` (optional): minutes, 1-1440. Without a duration Controme uses its default duration.
+
+If Controme reports them, the climate entity shows the attributes `temporary_mode`, `temporary_until` and `permanent_target_temperature`.
+
+### `controme.activate_scene`
+Activates a Controme temperature scene for the selected rooms only. The scene is always sent with the room ID of the target entity.
+- `scene_id` (required): ID of the scene in Controme. Unknown IDs are rejected before anything is sent.
+- `duration` (optional): minutes, 1-1440. Without a duration the scene stays active until the next manual change or the next switching point of the heating program.
+
+**Warning:** A scene affects every selected room. If you select several climate entities (or an area), the scene is activated for each of these rooms.
+
+```yaml
+action: controme.set_temporary_temperature
+target:
+  entity_id: climate.controme_living_room
+data:
+  temperature: 21.5
+  duration: 60
+```
+
 ## Supported Languages
 - English
 - German (Deutsch)
@@ -83,8 +110,10 @@ The values are recalculated every minute, so a sensor keeps aging and the proble
 
 ## Known Limitations
 - Several Controme systems with the same haus_id are not supported. The IDs of devices and entities are built from haus_id, floor and room, so a second system with the same haus_id would collide with the first one. The haus_id (usually 1, sometimes 2) is entered during setup.
-- The HVAC mode of the climate entities shows the Controme operation mode but cannot be switched from Home Assistant.
-- Floors without rooms and rooms without their own ID are shown, but their target temperature cannot be set.
+- Only heat and off can be set as HVAC mode; cooling is not supported (it is only displayed if Controme reports it).
+- A temporary temperature cannot be cancelled from Home Assistant, because the Controme API documents no way to do so; it ends after its duration.
+- Scenes can only be activated for single rooms (one request per selected climate entity), never for all rooms at once. There are no scene entities.
+- Floors without rooms and rooms without their own ID are shown, but nothing (target temperature, HVAC mode, temporary temperature, scene) can be set for them.
 - The transmission monitoring entities use the haus_id in their IDs as well (e.g. `1_transmission_problem`), so they are affected by the same haus_id limitation.
 
 ## Support
