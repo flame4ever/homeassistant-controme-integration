@@ -102,6 +102,9 @@ class CoordinatorEntity:
     async def async_added_to_hass(self):
         pass
 
+    async def async_will_remove_from_hass(self):
+        self.removed = True
+
     def async_on_remove(self, func):
         pass
 
@@ -153,6 +156,21 @@ class FakeSession:
 
 
 SESSION = FakeSession()
+# Calls of event.async_call_later: dicts with delay, action and cancelled flag
+CALL_LATER = []
+
+
+def async_call_later(hass, delay, action):
+    """Record the call; the returned function cancels it like in HA."""
+    call = {"delay": delay, "action": action, "cancelled": False}
+    CALL_LATER.append(call)
+
+    def cancel():
+        call["cancelled"] = True
+
+    return cancel
+
+
 # Config entry IDs that service.async_get_config_entry treats as not loaded
 UNLOADED_ENTRIES = set()
 
@@ -197,6 +215,7 @@ def install(time_zone):
     modules["homeassistant.components.climate"].HVACAction = HVACAction
     modules["homeassistant.components.climate"].ClimateEntityFeature = ClimateEntityFeature
     modules["homeassistant.helpers.service"].async_get_config_entry = async_get_config_entry
+    modules["homeassistant.helpers.event"].async_call_later = async_call_later
     modules["homeassistant.components.climate"].DOMAIN = "climate"
     modules["homeassistant.helpers.update_coordinator"].CoordinatorEntity = CoordinatorEntity
     modules["homeassistant.helpers.device_registry"].DeviceInfo = dict

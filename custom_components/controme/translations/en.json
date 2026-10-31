@@ -122,7 +122,7 @@
     "services": {
         "set_temporary_temperature": {
             "name": "Set temporary temperature",
-            "description": "Sets a temporary target temperature for the selected Controme rooms. Each selected room is set separately.",
+            "description": "Sets a temporary target temperature for the selected Controme rooms, each room separately. The duration is only approximate (Controme may end it earlier). Setting the temperature normally (climate.set_temperature) ends the temporary value. Controme reports no status of the temporary mode.",
             "fields": {
                 "temperature": {
                     "name": "Temperature",
@@ -130,7 +130,7 @@
                 },
                 "duration": {
                     "name": "Duration",
-                    "description": "Duration in minutes (1-1440). Without a duration Controme uses its default duration."
+                    "description": "Approximate duration in minutes (1-1440). Without a duration Controme uses its default duration."
                 }
             }
         }

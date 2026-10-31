@@ -16,6 +16,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import service
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
@@ -42,6 +43,8 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 # Send temperature changes to the Controme system one at a time
 PARALLEL_UPDATES = 1
+# Controme reports a temporary temperature only after some seconds, refresh afterwards
+DELAYED_REFRESH_SECONDS = 10
 
 # Controme documents "heating", "cooling", "off" and "on"; some firmwares report
 # capitalized strings ("Heating") or integers (0 = off, 1 = cooling, 2 = heating).
@@ -136,6 +139,7 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         # Floors without rooms and rooms without ID have no real room ID to send to
         self._synthetic_room = is_synthetic_room(coordinator.data, room_data)
         self._room_present = True
+        self._unsub_delayed_refresh = None
         self._update_from_data(room_data)
 
     def _update_from_data(self, data):
@@ -271,6 +275,27 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
             },
         )
 
+        # Show the value right away; Controme reports it only after a few seconds,
+        # an immediate refresh would jump back to the old value
         self._attr_target_temperature = temperature
         self.async_write_ha_state()
+        self._cancel_delayed_refresh()
+        self._unsub_delayed_refresh = async_call_later(
+            self.hass, DELAYED_REFRESH_SECONDS, self._async_delayed_refresh
+        )
+
+    async def _async_delayed_refresh(self, _now) -> None:
+        """Refresh the coordinator data after a temporary temperature was set."""
+        self._unsub_delayed_refresh = None
         await self.coordinator.async_request_refresh()
+
+    def _cancel_delayed_refresh(self) -> None:
+        """Cancel a pending delayed refresh."""
+        if self._unsub_delayed_refresh is not None:
+            self._unsub_delayed_refresh()
+            self._unsub_delayed_refresh = None
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Cancel a pending delayed refresh when the entity is removed or unloaded."""
+        self._cancel_delayed_refresh()
+        await super().async_will_remove_from_hass()

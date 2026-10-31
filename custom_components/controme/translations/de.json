@@ -122,7 +122,7 @@
     "services": {
         "set_temporary_temperature": {
             "name": "Temporäre Temperatur setzen",
-            "description": "Setzt eine temporäre Solltemperatur für die ausgewählten Controme-Räume. Jeder ausgewählte Raum wird einzeln gesetzt.",
+            "description": "Setzt eine temporäre Solltemperatur für die ausgewählten Controme-Räume, jeden Raum einzeln. Die Dauer ist nur ungefähr (Controme kann sie früher beenden). Ein normales Setzen der Temperatur (climate.set_temperature) beendet den temporären Wert. Controme meldet keinen Status zum temporären Modus.",
             "fields": {
                 "temperature": {
                     "name": "Temperatur",
@@ -130,7 +130,7 @@
                 },
                 "duration": {
                     "name": "Dauer",
-                    "description": "Dauer in Minuten (1-1440). Ohne Dauer verwendet Controme seine Standarddauer."
+                    "description": "Ungefähre Dauer in Minuten (1-1440). Ohne Dauer verwendet Controme seine Standarddauer."
                 }
             }
         }

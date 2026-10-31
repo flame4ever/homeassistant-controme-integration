@@ -83,21 +83,16 @@ The values are recalculated every minute, so a sensor keeps aging and the proble
 
 ## Services
 
-Both services target Controme climate entities. Every selected climate entity is one request for exactly that room; selecting several entities sends one request per room. There is no way to address all rooms at once.
-
 ### `controme.set_temporary_temperature`
-Sets a temporary target temperature for the selected rooms.
+Sets a temporary target temperature for the selected Controme climate entities. Every selected entity is one request for exactly that room; there is no way to address all rooms at once.
 - `temperature` (required): 5-30 °C in steps of 0.5
-- `duration` (optional): minutes, 1-1440. Without a duration Controme uses its default duration.
+- `duration` (optional): approximate duration in minutes, 1-1440. Without a duration Controme uses its default duration.
 
-If Controme reports them, the climate entity shows the attributes `temporary_mode`, `temporary_until` and `permanent_target_temperature`.
-
-### `controme.activate_scene`
-Activates a Controme temperature scene for the selected rooms only. The scene is always sent with the room ID of the target entity.
-- `scene_id` (required): ID of the scene in Controme. Unknown IDs are rejected before anything is sent.
-- `duration` (optional): minutes, 1-1440. Without a duration the scene stays active until the next manual change or the next switching point of the heating program.
-
-**Warning:** A scene affects every selected room. If you select several climate entities (or an area), the scene is activated for each of these rooms.
+Please note:
+- The duration is only approximate. In a test the temporary value ended earlier than requested.
+- Setting the temperature normally (`climate.set_temperature`) ends the temporary value.
+- The Controme API reports no status of the temporary mode (no end time, no permanent target temperature). The new value is shown right away and confirmed by a refresh about 10 seconds later. The attributes `temporary_mode`, `temporary_until` and `permanent_target_temperature` only appear if a Controme firmware reports these documented fields.
+- There is no service to cancel a temporary temperature; set the temperature normally instead.
 
 ```yaml
 action: controme.set_temporary_temperature

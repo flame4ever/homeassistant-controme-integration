@@ -256,8 +256,39 @@ def test_ziel_with_and_without_duration():
         assert SESSION.posts[0]["url"] == "http://controme.local/set/json/v1/1/ziel/13/"
         assert SESSION.posts[0]["data"] == {"ziel": "21.5", "duration": expected,
                                             "user": USER, "password": PASSWORD}
-        assert coordinator.refreshes == 1
         assert entity._attr_target_temperature == 21.5
+
+
+# R8-03: optimistic value, refresh delayed by async_call_later, cancelled on removal
+def test_ziel_delayed_refresh():
+    reset()
+    ha_stubs.CALL_LATER.clear()
+    entity, coordinator = make_climate()
+    asyncio.run(entity.async_set_temporary_temperature(temperature=21.5, duration=5))
+    # Optimistic value written at once, no immediate refresh
+    assert entity._attr_target_temperature == 21.5 and entity.writes == 1
+    assert coordinator.refreshes == 0
+    assert [call["delay"] for call in ha_stubs.CALL_LATER] == [climate.DELAYED_REFRESH_SECONDS]
+    assert climate.DELAYED_REFRESH_SECONDS == 10
+    # A second call replaces the pending refresh
+    asyncio.run(entity.async_set_temporary_temperature(temperature=22.0))
+    assert ha_stubs.CALL_LATER[0]["cancelled"] is True
+    assert ha_stubs.CALL_LATER[1]["cancelled"] is False
+    # When the timer fires, the coordinator is refreshed
+    asyncio.run(ha_stubs.CALL_LATER[1]["action"](None))
+    assert coordinator.refreshes == 1
+    assert entity._unsub_delayed_refresh is None
+
+
+def test_ziel_delayed_refresh_cancelled_on_remove():
+    reset()
+    ha_stubs.CALL_LATER.clear()
+    entity, coordinator = make_climate()
+    asyncio.run(entity.async_set_temporary_temperature(temperature=21.5))
+    asyncio.run(entity.async_will_remove_from_hass())
+    assert ha_stubs.CALL_LATER[0]["cancelled"] is True
+    assert entity.removed is True
+    assert coordinator.refreshes == 0
 
 
 def test_ziel_synthetic_room():
