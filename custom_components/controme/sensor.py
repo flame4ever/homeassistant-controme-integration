@@ -18,13 +18,14 @@ from homeassistant.util import slugify
 
 from .coordinator import ContromeConfigEntry
 from .entity import ContromeTransmissionEntity
-from .helpers import find_room, is_return_sensor, iter_rooms, to_float
+from .helpers import control_deviation, find_room, is_return_sensor, iter_rooms, to_float
 from .const import (
     DOMAIN,
     CONF_HAUS_ID,
     ENTITY_ID_MAP,
     VALUE_MAP,
     SENSOR_TYPE_OPERATION_MODE,
+    SENSOR_TYPE_CONTROL_DEVIATION,
 )
 
 from dataclasses import dataclass
@@ -72,6 +73,15 @@ SENSOR_TYPES: tuple[ContromeSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.HUMIDITY,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=PERCENTAGE,
+    ),
+    # A temperature difference: without a device class HA does not convert it like
+    # an absolute temperature (a difference of 1 K is 1.8 °F, not 33.8 °F)
+    ContromeSensorEntityDescription(
+        key=SENSOR_TYPE_CONTROL_DEVIATION,
+        translation_key=SENSOR_TYPE_CONTROL_DEVIATION,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="K",
+        suggested_display_precision=2,
     ),
 )
 
@@ -122,6 +132,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, asy
                     )
                 )
                 _LOGGER.debug("%s sensor added", sensor_type)
+
+        # Control deviation, calculated from the room data without an extra request
+        if "temperatur" in room and "solltemperatur" in room:
+            sensors.append(
+                ContromeSensor(coordinator, entry, room, SENSOR_TYPE_CONTROL_DEVIATION, device_info)
+            )
 
         # Process return temperature sensors
         for sensor in room.get("sensoren", []):
@@ -239,6 +255,10 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
             else:
                 # The return sensor is no longer reported for this room
                 self._has_value = False
+        elif self._sensor_type == SENSOR_TYPE_CONTROL_DEVIATION:
+            value = control_deviation(room_data)
+            self._attr_native_value = value
+            self._has_value = value is not None
         else:
             value = room_data.get(VALUE_MAP.get(self._sensor_type))
             # For numeric sensors, ensure we have numeric values

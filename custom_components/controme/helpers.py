@@ -1,5 +1,6 @@
 """Helper functions for Controme integration."""
 import asyncio
+import math
 import re
 import logging
 from datetime import datetime, timedelta
@@ -129,6 +130,21 @@ def to_float(value: Any) -> Optional[float]:
         return float(value)
     except (ValueError, TypeError):
         return None
+
+def control_deviation(room: Dict[str, Any]) -> Optional[float]:
+    """Return temperatur - solltemperatur + total_offset in K (2 decimals), negative = too cold.
+
+    A missing total_offset counts as 0; a present but non-numeric one gives None,
+    like a non-numeric current or target temperature.
+    """
+    current = to_float(room.get("temperatur"))
+    target = to_float(room.get("solltemperatur"))
+    offset = to_float(room["total_offset"]) if "total_offset" in room else 0.0
+    if current is None or target is None or offset is None:
+        return None
+    deviation = current - target + offset
+    # "nan" or "inf" strings are numeric for float(), but no usable reading
+    return round(deviation, 2) if math.isfinite(deviation) else None
 
 def parse_transmission(value: Any) -> Optional[datetime]:
     """Parse a Controme transmission timestamp, returning None for empty or unknown values.

@@ -111,6 +111,9 @@
             },
             "stale_sensors": {
                 "name": "Stale sensors"
+            },
+            "control_deviation": {
+                "name": "Control deviation"
             }
         },
         "binary_sensor": {

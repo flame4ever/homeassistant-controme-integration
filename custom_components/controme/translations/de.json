@@ -111,6 +111,9 @@
             },
             "stale_sensors": {
                 "name": "Veraltete Sensoren"
+            },
+            "control_deviation": {
+                "name": "Regelabweichung"
             }
         },
         "binary_sensor": {
