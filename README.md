@@ -49,7 +49,7 @@ Home Assistant integration for Controme heating systems. This integration allows
 2. If you installed via HACS: open HACS, select "Controme" and choose "Remove" (or "Uninstall"). With a manual installation, delete the folder `custom_components/controme` instead.
 3. Restart Home Assistant.
 
-Nothing is reset on the Controme system: target temperatures, operation modes, temporary temperatures and scenes that were set via Home Assistant stay as they are. Change them in Controme if needed.
+Nothing is reset on the Controme system: target temperatures and temporary temperatures that were set via Home Assistant stay as they are. Change them in Controme if needed.
 
 ## Entities Created
 
@@ -59,7 +59,7 @@ For each room, the integration creates:
 - Controls room temperature
 - Shows current and target temperature
 - Shows current humidity
-- HVAC mode heat or off can be switched per room (also via turn on/turn off). After switching, the room is read back after 2, 5 and 10 seconds; if Controme still reports the old mode, an error is shown. A different mode reported by Controme (e.g. cooling) is displayed but cannot be selected.
+- Shows the Controme operation mode as HVAC mode (heat, cool or off); it can only be changed in Controme
 
 ### Sensors
 - Current Temperature
@@ -113,10 +113,10 @@ data:
 
 ## Known Limitations
 - Several Controme systems with the same haus_id are not supported. The IDs of devices and entities are built from haus_id, floor and room, so a second system with the same haus_id would collide with the first one. The haus_id (usually 1, sometimes 2) is entered during setup.
-- Only heat and off can be set as HVAC mode; cooling is not supported (it is only displayed if Controme reports it).
-- A temporary temperature cannot be cancelled from Home Assistant, because the Controme API documents no way to do so; it ends after its duration.
-- Scenes can only be activated for single rooms (one request per selected climate entity), never for all rooms at once. There are no scene entities.
-- Floors without rooms and rooms without their own ID are shown, but nothing (target temperature, HVAC mode, temporary temperature, scene) can be set for them.
+- The HVAC mode (Controme operation mode) cannot be switched from Home Assistant. The firmware tested rejects the documented API call for it (HTTP 400).
+- Controme scenes are not supported. In a test, Controme did not reliably apply a scene to a single room only, and a scene for all rooms is too risky.
+- The duration of a temporary temperature is only approximate, and the API reports no status of the temporary mode. There is no separate service to cancel it; setting the temperature normally ends it.
+- Floors without rooms and rooms without their own ID are shown, but neither a target temperature nor a temporary temperature can be set for them.
 - The transmission monitoring entities use the haus_id in their IDs as well (e.g. `1_transmission_problem`), so they are affected by the same haus_id limitation.
 
 ## Support
