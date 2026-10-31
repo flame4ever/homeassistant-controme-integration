@@ -6,12 +6,18 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from .coordinator import ContromeConfigEntry, ContromeDataUpdateCoordinator
 from .const import DOMAIN, CONF_HAUS_ID, CONF_API_URL
+from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.BINARY_SENSOR]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the Controme services (once, independent of config entries)."""
+    async_setup_services(hass)
+    return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry) -> bool:
     """Set up Controme from a config entry."""

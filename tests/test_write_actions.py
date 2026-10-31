@@ -14,7 +14,8 @@ import ha_stubs  # noqa: E402
 
 ha_stubs.install(timezone(timedelta(hours=1)))
 
-from custom_components.controme import api, climate  # noqa: E402
+import custom_components.controme as integration  # noqa: E402
+from custom_components.controme import api, climate, services  # noqa: E402
 
 SESSION = ha_stubs.SESSION
 HVACMode = ha_stubs.HVACMode
@@ -255,14 +256,94 @@ def test_set_hvac_mode_synthetic_room():
     assert SESSION.posts == []
 
 
+# S4-03: temporary temperature
+def test_ziel_with_and_without_duration():
+    for duration, expected in ((None, "default"), (2, "2"), (1440, "1440")):
+        reset()
+        entity, coordinator = make_climate()
+        if duration is None:
+            asyncio.run(entity.async_set_temporary_temperature(temperature=21.5))
+        else:
+            asyncio.run(entity.async_set_temporary_temperature(temperature=21.5, duration=duration))
+        assert SESSION.posts[0]["url"] == "http://controme.local/set/json/v1/1/ziel/13/"
+        assert SESSION.posts[0]["data"] == {"ziel": "21.5", "duration": expected,
+                                            "user": USER, "password": PASSWORD}
+        assert coordinator.refreshes == 1
+        assert entity._attr_target_temperature == 21.5
+
+
+def test_ziel_synthetic_room():
+    reset()
+    entity, _ = make_climate({"name": "Floor", "temperatur": 20.0})
+    raises(ha_stubs.ServiceValidationError, asyncio.run, entity.async_set_temporary_temperature(temperature=21.0))
+    assert SESSION.posts == []
+
+
+def test_service_temperature_limits():
+    for value, expected in ((5, 5.0), ("21.5", 21.5), (30, 30.0), (22.0, 22.0)):
+        assert services.validate_temperature(value) == expected
+    for value in (4.5, 30.5, 35, 21.3, "abc", None, True):
+        raises(ha_stubs.Invalid, services.validate_temperature, value)
+
+
+def test_service_duration_limits():
+    for value, expected in ((1, 1), ("2", 2), (1440, 1440), (60.0, 60)):
+        assert services.validate_duration(value) == expected
+    for value in (0, -1, 1441, 1.5, "abc", None, True):
+        raises(ha_stubs.Invalid, services.validate_duration, value)
+
+
+def test_services_registered_in_async_setup():
+    registry = sys.modules["homeassistant.helpers.service"].registered
+    registry.clear()
+    assert asyncio.run(integration.async_setup(None, {})) is True
+    registered = {name: kwargs for _domain, name, kwargs in registry}
+    assert all(domain == "controme" for domain, _name, _kwargs in registry)
+    assert registered["set_temporary_temperature"]["entity_domain"] == "climate"
+    assert registered["set_temporary_temperature"]["func"] == "async_set_temporary_temperature"
+
+
+def test_services_yaml_matches_schema():
+    try:
+        import yaml
+    except ImportError as err:
+        raise unittest.SkipTest("PyYAML not installed") from err
+    path = ha_stubs.ROOT / "custom_components" / "controme" / "services.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    fields = data["set_temporary_temperature"]["fields"]
+    assert fields["temperature"]["selector"]["number"] == {
+        "min": 5, "max": 30, "step": 0.5, "unit_of_measurement": "°C", "mode": "box"}
+    assert fields["duration"]["selector"]["number"]["min"] == 1
+    assert fields["duration"]["selector"]["number"]["max"] == 1440
+    assert data["set_temporary_temperature"]["target"]["entity"] == {
+        "integration": "controme", "domain": "climate"}
+
+
+def test_temporary_attributes_only_when_reported():
+    entity, _ = make_climate()
+    assert entity.extra_state_attributes == {}
+    room = {"id": 13, "name": "R", "solltemperatur": 21.5, "is_temporary_mode": True,
+            "mode_end_datetime": "2026-10-31 14:30:00", "perm_solltemperatur": "21.0"}
+    entity, _ = make_climate(room)
+    attributes = entity.extra_state_attributes
+    assert attributes["temporary_mode"] is True
+    assert attributes["temporary_until"].isoformat() == "2026-10-31T14:30:00+01:00"
+    assert attributes["permanent_target_temperature"] == 21.0
+    entity, _ = make_climate({"id": 13, "name": "R", "is_temporary_mode": "false",
+                              "mode_end_datetime": ""})
+    assert entity.extra_state_attributes == {"temporary_mode": False, "temporary_until": None}
+
+
 def run(namespace):
     failures = 0
+    skipped = 0
     tests = [(name, func) for name, func in sorted(namespace.items()) if name.startswith("test_")]
     for name, func in tests:
         try:
             func()
             print(f"OK   {name}")
         except unittest.SkipTest as err:
+            skipped += 1
             print(f"SKIP {name}: {err}")
         except Exception as err:  # noqa: BLE001
             failures += 1
@@ -272,7 +353,7 @@ def run(namespace):
     if leaked:
         failures += 1
         print(f"FAIL credentials in logs: {leaked}")
-    print(f"{len(tests) - failures}/{len(tests)} tests passed")
+    print(f"{len(tests) - failures - skipped}/{len(tests)} tests passed, {skipped} skipped")
     return failures
 
 

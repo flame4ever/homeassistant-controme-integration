@@ -21,8 +21,24 @@ from homeassistant.util import slugify
 
 from .api import async_get_json, async_post, room_read_url, room_write_url
 from .coordinator import ContromeConfigEntry
-from .helpers import find_room, find_room_by_id, is_synthetic_room, iter_rooms, to_float
-from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD
+from .helpers import (
+    find_room,
+    find_room_by_id,
+    is_synthetic_room,
+    iter_rooms,
+    parse_mode_end,
+    to_float,
+)
+from .const import (
+    DOMAIN,
+    CONF_API_URL,
+    CONF_HAUS_ID,
+    CONF_USER,
+    CONF_PASSWORD,
+    MIN_TEMPERATURE,
+    MAX_TEMPERATURE,
+    TEMPERATURE_STEP,
+)
 
 _LOGGER = logging.getLogger(__name__)
 # Send temperature changes to the Controme system one at a time
@@ -105,9 +121,9 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
     # The entity takes the name of its room device
     _attr_name = None
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_target_temperature_step = 0.5
-    _attr_min_temp = 5
-    _attr_max_temp = 30
+    _attr_target_temperature_step = TEMPERATURE_STEP
+    _attr_min_temp = MIN_TEMPERATURE
+    _attr_max_temp = MAX_TEMPERATURE
     # Heating and off can be switched, a different reported mode is added in _update_from_data
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_hvac_mode = HVACMode.HEAT
@@ -142,6 +158,22 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         if self._attr_hvac_mode not in self._attr_hvac_modes:
             self._attr_hvac_modes.append(self._attr_hvac_mode)
         self._attr_hvac_action = self._hvac_action_from_outputs(data.get("ausgang"))
+        self._temporary_attributes = self._temporary_attributes_from_data(data)
+
+    @staticmethod
+    def _temporary_attributes_from_data(data) -> dict[str, Any]:
+        """Return the temporary mode attributes, only for fields /temps/ actually reports."""
+        attributes = {}
+        if "is_temporary_mode" in data:
+            value = data["is_temporary_mode"]
+            if isinstance(value, str):
+                value = value.strip().lower() in ("true", "1", "yes")
+            attributes["temporary_mode"] = bool(value)
+        if "mode_end_datetime" in data:
+            attributes["temporary_until"] = parse_mode_end(data["mode_end_datetime"])
+        if "perm_solltemperatur" in data:
+            attributes["permanent_target_temperature"] = to_float(data["perm_solltemperatur"])
+        return attributes
 
     def _hvac_action_from_outputs(self, ausgang: Any) -> HVACAction | None:
         """Derive the HVAC action from the room's output (valve) values."""
@@ -177,6 +209,11 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
     def device_info(self):
         """Return device info."""
         return self._device_info
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the temporary mode attributes if Controme reports them."""
+        return self._temporary_attributes
 
     async def _async_write(self, endpoint: str, data: dict[str, Any]) -> str:
         """Send a write request for this room via the central API helper."""
@@ -264,4 +301,24 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         self.async_write_ha_state()
 
         # Request a data refresh to update all entities
+        await self.coordinator.async_request_refresh()
+
+    async def async_set_temporary_temperature(
+        self, temperature: float, duration: int | None = None
+    ) -> None:
+        """Set a temporary target temperature (service controme.set_temporary_temperature).
+
+        Without a duration Controme uses its default duration ("default").
+        """
+        self._check_real_room()
+        await self._async_write(
+            room_write_url(self._base_url, self._house_id, "ziel", self._room_id),
+            {
+                "ziel": str(float(temperature)),
+                "duration": "default" if duration is None else str(duration),
+            },
+        )
+
+        self._attr_target_temperature = temperature
+        self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
