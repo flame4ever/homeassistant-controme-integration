@@ -90,13 +90,14 @@ SENSOR_TYPES: tuple[ContromeSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=PERCENTAGE,
     ),
-    # A temperature difference: without a device class HA does not convert it like
-    # an absolute temperature (a difference of 1 K is 1.8 °F, not 33.8 °F)
+    # A temperature difference: TEMPERATURE_DELTA converts it as a difference
+    # (1 K is 1.8 °F), not like an absolute temperature (33.8 °F)
     ContromeSensorEntityDescription(
         key=SENSOR_TYPE_CONTROL_DEVIATION,
         translation_key=SENSOR_TYPE_CONTROL_DEVIATION,
+        device_class=SensorDeviceClass.TEMPERATURE_DELTA,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement="K",
+        native_unit_of_measurement=UnitOfTemperature.KELVIN,
         suggested_display_precision=2,
     ),
     # Disabled by default: relay systems report 0/1, which would show as 0 or 1 %
@@ -236,6 +237,9 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
     """Representation of a Controme Sensor."""
 
     _attr_has_entity_name = True
+    # Valve outputs and transmission times of further room sensors change with almost
+    # every update, keep them out of the recorder database
+    _unrecorded_attributes = frozenset({"outputs", "last_transmission"})
 
     def __init_sensor_description(self, sensor_type: str, room_data) -> None:
         """Initialize the sensor description based on type."""

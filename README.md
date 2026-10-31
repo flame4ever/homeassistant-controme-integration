@@ -74,9 +74,9 @@ For each room, the integration creates:
 - Return Temperature (if available)
 - Total Offset (unit °C as before, although it is a difference; changing the unit would break the long-term statistics)
 - Operation Mode
-- **Control Deviation** (`sensor.controme_<room>_control_deviation`, unit K): current temperature minus target temperature plus total offset, rounded to 0.01 K. Negative means too cold. Calculated from the room data without an extra request; only created for rooms with current and target temperature. A missing total offset counts as 0.
+- **Control Deviation** (`sensor.controme_<room>_control_deviation`, unit K, device class temperature difference): current temperature minus target temperature plus total offset, rounded to 0.01 K. Negative means too cold. Calculated from the room data without an extra request; only created for rooms with current and target temperature. A missing total offset counts as 0.
 - **Valve Position** (`sensor.controme_<room>_valve`, %, disabled by default): mean of the room's outputs from `/outs/`. The attribute `outputs` lists the single outputs (e.g. `{"6": 0, "7": 25}`). Only created for rooms with outputs. On relay systems the outputs are only 0 or 1, so the value is 0-1 "%" there; that is why the sensor is disabled by default.
-- **Further sensors** (`sensor.controme_<room>_sensor_<name>`, disabled by default): sensors of a room that are neither the room temperature sensor nor a return sensor, named after their Controme description, with the attributes `sensor_id` and `last_transmission`. Only sensors whose description clearly names humidity ("feuchte"/"humid", %) or temperature ("temp", °C) are created; all others are skipped (see the debug log), nothing is guessed.
+- **Further sensors** (`sensor.controme_<room>_sensor_<name>`, disabled by default): sensors of a room that are neither the room temperature sensor nor a return sensor, named after their Controme description, with the attributes `sensor_id` and `last_transmission`. Only sensors whose description clearly names humidity ("feuchte"/"humid", %) or temperature ("temp", °C) are created; all others are skipped (see the debug log), nothing is guessed. These sensors often only duplicate the existing humidity sensor of the room (e.g. "LuftFeuchte ..." sensors report the same value as the room humidity), which is why they are disabled by default.
 
 ### Transmission Monitoring (hub device)
 The Controme hub device gets three diagnostic entities, based on the "last transmission" time Controme reports for every sensor:
@@ -138,6 +138,7 @@ Activates a Controme temperature scene for the room of the selected climate enti
 
 How it works:
 - Before anything is sent, the scene list of Controme is read. A scene contains all rooms it lists (rooms switched off in the scene in Controme are not listed); whether the scene is currently active in a room does not matter.
+- The duration is not reliable on the tested firmware: a scene with a duration of 2 minutes was still active after 3.5 minutes. Similar to the temporary temperature, treat it as approximate.
 - The listed room is matched by its name "Floor / Room" (compared case-insensitively, also with umlauts). The scene is only sent if it lists exactly one room, this room is the room of the selected entity and its name is unique in Controme.
 - Scenes for several rooms, for example the default scene "*", are refused on purpose, as are unknown scene IDs and other rooms. In these cases nothing is sent and a translated error is shown.
 - The request always contains the room ID, but the live test showed that Controme applies a scene to all rooms it lists, regardless of the room ID. The protection of the other rooms therefore relies only on the check above. If Controme reports that the scene was applied to other rooms as well, an error with these room names is shown and a warning is logged.
@@ -170,7 +171,7 @@ data:
 - CPU load, temperature and uptime of the Controme system are not available through the API. Software and hardware version are only shown if the firmware reports them.
 - The valve position cannot tell relay outputs (0/1) from valve positions (0-100); the meaning depends on the Controme hardware. Outputs are read only, they cannot be set.
 - Further room sensors are only created if their description clearly names humidity or temperature. Other sensor types (e.g. of a room controller or a wireless thermometer) are not created.
-- The total offset keeps the unit °C (with the temperature device class) for compatibility; for Fahrenheit users the converted value of this difference is not meaningful. The control deviation uses K without device class and is not converted.
+- The total offset keeps the unit °C (with the temperature device class) for compatibility; for Fahrenheit users the converted value of this difference is not meaningful. The control deviation uses K with the device class for temperature differences, so Home Assistant converts it correctly as a difference.
 - Floors without rooms and rooms without their own ID are shown, but neither a target temperature nor a temporary temperature can be set for them.
 - The transmission monitoring entities use the haus_id in their IDs as well (e.g. `1_transmission_problem`), so they are affected by the same haus_id limitation.
 

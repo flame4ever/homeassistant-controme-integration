@@ -204,8 +204,9 @@ def test_control_deviation_entity():
     assert entity.entity_id == "sensor.controme_testraum_control_deviation"
     assert entity._attr_native_value == -0.40 and entity.available
     description = entity.entity_description
-    assert description.native_unit_of_measurement == "K"
-    assert description.device_class is None
+    # Stub constants return their attribute names: UnitOfTemperature.KELVIN ("K" in HA)
+    assert description.native_unit_of_measurement == "KELVIN"
+    assert description.device_class == "TEMPERATURE_DELTA"
     assert description.state_class == "MEASUREMENT"
     assert description.suggested_display_precision == 2
     assert description.entity_registry_enabled_default is True
@@ -259,6 +260,7 @@ def test_valve_entity():
     assert description.state_class == "MEASUREMENT"
     assert description.icon == "mdi:valve"
     assert description.entity_registry_enabled_default is False
+    assert sensor.ContromeSensor._unrecorded_attributes == frozenset({"outputs", "last_transmission"})
     # /outs/ failed: no "ausgang" in the new data, so the sensor is unavailable
     coordinator.data = [{"id": 5, "raeume": [{"id": 3, "name": "Badezimmer"}]}]
     entity._handle_coordinator_update()
