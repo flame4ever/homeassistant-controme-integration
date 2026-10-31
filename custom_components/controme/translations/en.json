@@ -133,6 +133,20 @@
                     "description": "Approximate duration in minutes (1-1440). Without a duration Controme uses its default duration."
                 }
             }
+        },
+        "activate_scene": {
+            "name": "Activate scene",
+            "description": "Activates a Controme temperature scene for the selected room. Only scenes that contain exactly this one room are activated; scenes for several rooms (e.g. \"*\") are refused before anything is sent. The duration is only approximate.",
+            "fields": {
+                "scene_id": {
+                    "name": "Scene ID",
+                    "description": "ID of the Controme temperature scene. The scene must contain only the room of the selected entity."
+                },
+                "duration": {
+                    "name": "Duration",
+                    "description": "Approximate duration in minutes (1-1440). Without a duration the scene stays active until the next switch."
+                }
+            }
         }
     },
     "exceptions": {
@@ -150,6 +164,21 @@
         },
         "invalid_write_target": {
             "message": "Refused to send a change that does not target exactly one Controme room."
+        },
+        "unknown_scene": {
+            "message": "Controme has no scene with ID {scene_id}."
+        },
+        "scene_not_single_room": {
+            "message": "Scene {scene_id} ({scene}) was not activated, because it does not contain only this room. Rooms of the scene: {rooms}."
+        },
+        "scene_room_ambiguous": {
+            "message": "The scene was not activated, because the room name \"{room}\" is not unique in Controme."
+        },
+        "scene_list_unavailable": {
+            "message": "The scene was not activated, because the Controme scene list could not be read."
+        },
+        "scene_applied_to_other_rooms": {
+            "message": "Controme reports that scene {scene_id} was also applied to other rooms: {rooms}. Please check these rooms in Controme."
         }
     }
 }

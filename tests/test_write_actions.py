@@ -76,9 +76,9 @@ def post(endpoint, data, base_url=None):
     return asyncio.run(api.async_post(None, base_url or BASE, endpoint, data, USER, PASSWORD))
 
 
-def raises(exc_type, func, *args):
+def raises(exc_type, func, *args, **kwargs):
     try:
-        func(*args)
+        func(*args, **kwargs)
     except exc_type as err:
         return err
     raise AssertionError(f"{exc_type.__name__} not raised")
@@ -406,7 +406,17 @@ def test_services_yaml_matches_schema():
     assert fields["duration"]["selector"]["number"]["max"] == 1440
     assert data["set_temporary_temperature"]["target"]["entity"] == {
         "integration": "controme", "domain": "climate"}
-    assert set(data) == {"set_temporary_temperature"}
+    assert set(data) == {"set_temporary_temperature", "activate_scene"}
+    scene = data["activate_scene"]
+    assert scene["target"]["entity"] == {"integration": "controme", "domain": "climate"}
+    assert set(scene["fields"]) == {"scene_id", "duration"}
+    assert scene["fields"]["scene_id"]["required"] is True
+    assert scene["fields"]["scene_id"]["selector"]["number"]["min"] == 1
+    assert scene["fields"]["duration"]["selector"]["number"]["max"] == 1440
+    # Every service and field has a translation
+    translations = json.loads((path.parent / "translations" / "en.json").read_text(encoding="utf-8"))
+    for name, service_data in data.items():
+        assert set(service_data["fields"]) == set(translations["services"][name]["fields"]), name
 
 
 def test_temporary_attributes_only_when_reported():
@@ -424,14 +434,137 @@ def test_temporary_attributes_only_when_reported():
     assert entity.extra_state_attributes == {"temporary_mode": False, "temporary_until": None}
 
 
-# R8-02: scenes are removed completely
-def test_no_scene_service_or_code():
+# S4b-03: activate_scene service
+def make_scene_climate(room_id=13):
+    """Climate entity in a house with the 11 rooms of ALL_LABELS (room 13 = TEST_LABEL)."""
+    floors = [{"id": n, "etagenname": f"Etage {n}", "raeume": [{"id": n, "name": f"Raum {n}"}]}
+              for n in range(1, 11)]
+    floors.append({"id": 50, "etagenname": "Test (ßÜÖÄüöä)",
+                   "raeume": [{"id": 13, "name": "Testraum (ßÜÖÄüöä)", "solltemperatur": 21.0}]})
+    floor = next(f for f in floors if f["raeume"][0]["id"] == room_id)
+    room = floor["raeume"][0]
+    room["floor_id"], room["room_id"] = floor["id"], room_id
+    entry = type("Entry", (), {"data": {"api_url": BASE, "haus_id": "1", "user": USER,
+                                        "password": PASSWORD}, "options": {},
+                               "entry_id": "entry1"})()
+    coordinator = FakeCoordinator(floors)
+    return climate.ContromeClimate(coordinator, entry, room, {}), coordinator
+
+
+def scene_call(entity, **kwargs):
+    return asyncio.run(entity.async_activate_scene(**kwargs))
+
+
+def test_activate_scene_single_room():
+    for duration, expected in ((None, {"room_id": "13"}), (2, {"room_id": "13", "duration": "2"})):
+        reset()
+        ha_stubs.CALL_LATER.clear()
+        entity, coordinator = make_scene_climate()
+        SESSION.get_responses.append(FakeResponse(payload=LIVE_SCENES))
+        SESSION.post_responses.append(FakeResponse(200, '{"roomlist": {"13": 21.5}, "time": "17:01"}'))
+        if duration is None:
+            scene_call(entity, scene_id=2)
+        else:
+            scene_call(entity, scene_id=2, duration=duration)
+        assert SESSION.gets == ["http://controme.local/get/json/v1/1/temperaturszenen/"]
+        assert len(SESSION.posts) == 1
+        assert SESSION.posts[0]["url"] == "http://controme.local/set/json/v1/1/temperaturszenen/2/"
+        assert SESSION.posts[0]["data"] == {**expected, "user": USER, "password": PASSWORD}
+        # Refresh delayed like for the temporary temperature
+        assert [call["delay"] for call in ha_stubs.CALL_LATER] == [climate.DELAYED_REFRESH_SECONDS]
+        assert coordinator.refreshes == 0
+
+
+def test_activate_scene_rejections_send_nothing():
+    cases = [
+        (13, 1, LIVE_SCENES, "scene_not_single_room"),   # "*" with all 11 rooms
+        (13, 99, LIVE_SCENES, "unknown_scene"),
+        (3, 2, LIVE_SCENES, "scene_not_single_room"),    # scene 2 on another room
+        (13, 2, None, "scene_list_unavailable"),         # GET failed
+        (13, 2, [{"id": 2, "raeume": "x"}], "scene_list_unavailable"),
+    ]
+    for room_id, scene_id, scenes, key in cases:
+        reset()
+        entity, coordinator = make_scene_climate(room_id)
+        SESSION.get_responses.append(FakeResponse(500) if scenes is None else FakeResponse(payload=scenes))
+        err = raises(ha_stubs.ServiceValidationError, scene_call, entity, scene_id=scene_id)
+        assert (err.translation_domain, err.translation_key) == ("controme", key), (room_id, scene_id)
+        assert SESSION.posts == [], (room_id, scene_id)
+        assert coordinator.refreshes == 0
+
+
+def test_activate_scene_ambiguous_room_name():
+    reset()
+    entity, coordinator = make_scene_climate()
+    # A second room with the same "Etage / Raum" label
+    coordinator.data.append({"id": 60, "etagenname": "TEST (ssÜÖÄüöä)",
+                             "raeume": [{"id": 14, "name": "testraum (ßüöäüöä)"}]})
+    SESSION.get_responses.append(FakeResponse(payload=LIVE_SCENES))
+    err = raises(ha_stubs.ServiceValidationError, scene_call, entity, scene_id=2)
+    assert err.translation_key == "scene_room_ambiguous"
+    assert SESSION.posts == []
+
+
+def test_activate_scene_synthetic_room_and_unloaded_entry():
+    reset()
+    entity, _ = make_climate({"name": "Floor", "temperatur": 20.0})
+    err = raises(ha_stubs.ServiceValidationError, scene_call, entity, scene_id=2)
+    assert err.translation_key == "not_a_room"
+    ha_stubs.UNLOADED_ENTRIES.add("entry1")
+    try:
+        entity, _ = make_scene_climate()
+        err = raises(ha_stubs.ServiceValidationError, scene_call, entity, scene_id=2)
+        assert err.translation_key == "service_config_entry_not_loaded"
+    finally:
+        ha_stubs.UNLOADED_ENTRIES.clear()
+    assert SESSION.posts == [] and SESSION.gets == []
+
+
+def test_activate_scene_applied_to_other_rooms():
+    reset()
+    ha_stubs.CALL_LATER.clear()
+    LOGS.messages.clear()
+    entity, _ = make_scene_climate()
+    SESSION.get_responses.append(FakeResponse(payload=LIVE_SCENES))
+    SESSION.post_responses.append(FakeResponse(
+        200, '{"roomlist": {"1": 5.0, "2": 23.5, "13": 21.5, "77": 20.0}, "time": "17:01"}'))
+    err = raises(ha_stubs.HomeAssistantError, scene_call, entity, scene_id=2)
+    assert err.translation_key == "scene_applied_to_other_rooms"
+    assert err.translation_placeholders == {
+        "scene_id": "2", "rooms": "Etage 1 / Raum 1, Etage 2 / Raum 2, Room 77"}
+    assert any("Etage 1 / Raum 1" in message for message in LOGS.messages)
+    assert_no_credentials(err, err.translation_placeholders, *LOGS.messages)
+    # The refresh is scheduled anyway, so the UI shows the real state
+    assert len(ha_stubs.CALL_LATER) == 1
+
+
+def test_activate_scene_roomlist_missing_only_logged():
+    for body in ("", "not json", '{"time": "17:01"}', '{"roomlist": [13]}', "[1, 2]"):
+        reset()
+        entity, _ = make_scene_climate()
+        SESSION.get_responses.append(FakeResponse(payload=LIVE_SCENES))
+        SESSION.post_responses.append(FakeResponse(200, body))
+        scene_call(entity, scene_id=2)
+        assert len(SESSION.posts) == 1, body
+
+
+def test_service_scene_id_limits():
+    for value, expected in ((1, 1), ("2", 2), (99.0, 99)):
+        assert services.validate_scene_id(value) == expected
+    for value in (0, -1, 1.5, "abc", None, True):
+        raises(ha_stubs.Invalid, services.validate_scene_id, value)
+
+
+def test_activate_scene_registered():
     registry = sys.modules["homeassistant.helpers.service"].registered
     registry.clear()
     asyncio.run(integration.async_setup(None, {}))
-    assert [name for _domain, name, _kwargs in registry] == ["set_temporary_temperature"]
+    registered = {name: kwargs for _domain, name, kwargs in registry}
+    assert set(registered) == {"set_temporary_temperature", "activate_scene"}
+    assert registered["activate_scene"]["entity_domain"] == "climate"
+    assert registered["activate_scene"]["func"] == "async_activate_scene"
+    # No scene entity platform
     assert "scene" not in [str(platform).lower() for platform in integration.PLATFORMS]
-    assert "async_activate_scene" not in vars(climate.ContromeClimate)
 
 
 # S4b-02: pre-check of the scene list

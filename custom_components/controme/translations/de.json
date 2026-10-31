@@ -133,6 +133,20 @@
                     "description": "Ungefähre Dauer in Minuten (1-1440). Ohne Dauer verwendet Controme seine Standarddauer."
                 }
             }
+        },
+        "activate_scene": {
+            "name": "Szene aktivieren",
+            "description": "Aktiviert eine Controme-Temperaturszene für den ausgewählten Raum. Aktiviert werden nur Szenen, die genau diesen einen Raum enthalten; Szenen für mehrere Räume (z. B. \"*\") werden abgelehnt, bevor etwas gesendet wird. Die Dauer ist nur ungefähr.",
+            "fields": {
+                "scene_id": {
+                    "name": "Szenen-ID",
+                    "description": "ID der Controme-Temperaturszene. Die Szene darf nur den Raum der ausgewählten Entität enthalten."
+                },
+                "duration": {
+                    "name": "Dauer",
+                    "description": "Ungefähre Dauer in Minuten (1-1440). Ohne Dauer bleibt die Szene bis zum nächsten Wechsel aktiv."
+                }
+            }
         }
     },
     "exceptions": {
@@ -150,6 +164,21 @@
         },
         "invalid_write_target": {
             "message": "Eine Änderung, die nicht genau einen Controme-Raum betrifft, wurde nicht gesendet."
+        },
+        "unknown_scene": {
+            "message": "Controme hat keine Szene mit der ID {scene_id}."
+        },
+        "scene_not_single_room": {
+            "message": "Szene {scene_id} ({scene}) wurde nicht aktiviert, weil sie nicht nur diesen Raum enthält. Räume der Szene: {rooms}."
+        },
+        "scene_room_ambiguous": {
+            "message": "Die Szene wurde nicht aktiviert, weil der Raumname \"{room}\" in Controme nicht eindeutig ist."
+        },
+        "scene_list_unavailable": {
+            "message": "Die Szene wurde nicht aktiviert, weil die Szenenliste von Controme nicht gelesen werden konnte."
+        },
+        "scene_applied_to_other_rooms": {
+            "message": "Controme meldet, dass Szene {scene_id} auch in anderen Räumen angewendet wurde: {rooms}. Bitte prüfen Sie diese Räume in Controme."
         }
     }
 }

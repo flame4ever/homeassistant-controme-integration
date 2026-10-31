@@ -1,7 +1,7 @@
-"""Write access to the Controme API for single rooms."""
+"""Write access to the Controme API for single rooms (and the reads it needs)."""
 import logging
 import re
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from urllib.parse import urlsplit
 
 from aiohttp import ClientError, ClientTimeout
@@ -32,6 +32,25 @@ def room_write_url(base_url: str, house_id: Any, kind: str, room_id: Any) -> str
 def scene_write_url(base_url: str, house_id: Any, scene_id: Any) -> str:
     """Return the write URL of a scene, the room is sent as room_id in the body."""
     return f"{base_url.rstrip('/')}/set/json/v1/{house_id}/temperaturszenen/{scene_id}/"
+
+
+def scenes_read_url(base_url: str, house_id: Any) -> str:
+    """Return the read URL of the scene list."""
+    return f"{base_url.rstrip('/')}/get/json/v1/{house_id}/temperaturszenen/"
+
+
+async def async_get_json(hass: HomeAssistant, endpoint: str) -> Optional[Any]:
+    """GET JSON from the read API (no credentials), returning None on errors."""
+    session = async_get_clientsession(hass)
+    try:
+        async with session.get(endpoint, timeout=REQUEST_TIMEOUT) as response:
+            if response.status != 200:
+                _LOGGER.debug("Controme read failed: URL=%s, status=%s", endpoint, response.status)
+                return None
+            return await response.json(content_type=None)
+    except (ClientError, TimeoutError, ValueError) as err:
+        _LOGGER.debug("Controme read failed: URL=%s, Error=%s", endpoint, type(err).__name__)
+        return None
 
 
 def check_single_room_write(base_url: str, endpoint: str, data: Dict[str, Any]) -> None:

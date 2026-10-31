@@ -22,3 +22,25 @@ set_temporary_temperature:
           step: 1
           unit_of_measurement: min
           mode: box
+activate_scene:
+  target:
+    entity:
+      integration: controme
+      domain: climate
+  fields:
+    scene_id:
+      required: true
+      selector:
+        number:
+          min: 1
+          step: 1
+          mode: box
+    duration:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 1440
+          step: 1
+          unit_of_measurement: min
+          mode: box
