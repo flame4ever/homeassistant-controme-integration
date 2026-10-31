@@ -45,6 +45,8 @@ SENSOR_TYPE_TOTAL_OFFSET = "total_offset"
 SENSOR_TYPE_OPERATION_MODE = "operation_mode"
 # Calculated from temperatur, solltemperatur and total_offset, so not in VALUE_MAP
 SENSOR_TYPE_CONTROL_DEVIATION = "control_deviation"
+# Mean of the room's outputs from /outs/ ("ausgang")
+SENSOR_TYPE_VALVE = "valve"
 
 SENSOR_TYPES = {
     SENSOR_TYPE_CURRENT: "temperatur",
@@ -61,6 +63,7 @@ ENTITY_ID_MAP = {
     SENSOR_TYPE_TOTAL_OFFSET: "offset",
     SENSOR_TYPE_OPERATION_MODE: "mode",
     SENSOR_TYPE_CONTROL_DEVIATION: "control_deviation",
+    SENSOR_TYPE_VALVE: "valve",
 }
 
 # Map sensor types to API data keys

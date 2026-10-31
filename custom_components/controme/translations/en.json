@@ -114,6 +114,9 @@
             },
             "control_deviation": {
                 "name": "Control deviation"
+            },
+            "valve": {
+                "name": "Valve position"
             }
         },
         "binary_sensor": {

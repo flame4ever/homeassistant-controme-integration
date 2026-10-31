@@ -18,7 +18,15 @@ from homeassistant.util import slugify
 
 from .coordinator import ContromeConfigEntry
 from .entity import ContromeTransmissionEntity
-from .helpers import control_deviation, find_room, is_return_sensor, iter_rooms, to_float
+from .helpers import (
+    control_deviation,
+    find_room,
+    is_return_sensor,
+    iter_rooms,
+    normalize_outputs,
+    to_float,
+    valve_position,
+)
 from .const import (
     DOMAIN,
     CONF_HAUS_ID,
@@ -26,6 +34,7 @@ from .const import (
     VALUE_MAP,
     SENSOR_TYPE_OPERATION_MODE,
     SENSOR_TYPE_CONTROL_DEVIATION,
+    SENSOR_TYPE_VALVE,
 )
 
 from dataclasses import dataclass
@@ -83,6 +92,15 @@ SENSOR_TYPES: tuple[ContromeSensorEntityDescription, ...] = (
         native_unit_of_measurement="K",
         suggested_display_precision=2,
     ),
+    # Disabled by default: relay systems report 0/1, which would show as 0 or 1 %
+    ContromeSensorEntityDescription(
+        key=SENSOR_TYPE_VALVE,
+        translation_key=SENSOR_TYPE_VALVE,
+        icon="mdi:valve",
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=PERCENTAGE,
+        entity_registry_enabled_default=False,
+    ),
 )
 
 async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, async_add_entities):
@@ -138,6 +156,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, asy
             sensors.append(
                 ContromeSensor(coordinator, entry, room, SENSOR_TYPE_CONTROL_DEVIATION, device_info)
             )
+
+        # Valve position, only for rooms with outputs in /outs/
+        ausgang = room.get("ausgang")
+        if isinstance(ausgang, dict) and ausgang:
+            sensors.append(ContromeSensor(coordinator, entry, room, SENSOR_TYPE_VALVE, device_info))
 
         # Process return temperature sensors
         for sensor in room.get("sensoren", []):
@@ -225,11 +248,14 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
-        return {
+        attributes = {
             "room_id": self._room_id,
             "floor_id": self._floor_id,
             "house_id": self._house_id,
         }
+        if self._sensor_type == SENSOR_TYPE_VALVE:
+            attributes["outputs"] = self._outputs
+        return attributes
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -257,6 +283,12 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
                 self._has_value = False
         elif self._sensor_type == SENSOR_TYPE_CONTROL_DEVIATION:
             value = control_deviation(room_data)
+            self._attr_native_value = value
+            self._has_value = value is not None
+        elif self._sensor_type == SENSOR_TYPE_VALVE:
+            # Without /outs/ data (request failed) the sensor is unavailable
+            self._outputs = normalize_outputs(room_data.get("ausgang"))
+            value = valve_position(self._outputs)
             self._attr_native_value = value
             self._has_value = value is not None
         else:

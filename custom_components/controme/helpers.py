@@ -146,6 +146,32 @@ def control_deviation(room: Dict[str, Any]) -> Optional[float]:
     # "nan" or "inf" strings are numeric for float(), but no usable reading
     return round(deviation, 2) if math.isfinite(deviation) else None
 
+def normalize_outputs(ausgang: Any) -> Dict[str, Any]:
+    """Return the outputs of a room with stripped keys (/outs/ reports e.g. " 6").
+
+    If two keys are equal after stripping, the last one wins.
+    """
+    if not isinstance(ausgang, dict):
+        return {}
+    outputs = {}
+    for key, value in ausgang.items():
+        stripped = str(key).strip()
+        if stripped in outputs:
+            _LOGGER.debug("Output %r reported twice after stripping, using the last value", stripped)
+        outputs[stripped] = value
+    return outputs
+
+def valve_position(outputs: Dict[str, Any]) -> Optional[float]:
+    """Return the mean of the numeric output values (2 decimals), or None without any.
+
+    Booleans and non-numeric values are ignored. On relay systems the values are 0/1.
+    """
+    values = [to_float(value) for value in outputs.values()]
+    values = [value for value in values if value is not None and math.isfinite(value)]
+    if not values:
+        return None
+    return round(sum(values) / len(values), 2)
+
 def parse_transmission(value: Any) -> Optional[datetime]:
     """Parse a Controme transmission timestamp, returning None for empty or unknown values.
 

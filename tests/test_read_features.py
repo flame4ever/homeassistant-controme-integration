@@ -220,6 +220,65 @@ def test_control_deviation_only_with_current_and_target():
     assert [uid for uid in ids if uid.endswith("_control_deviation")] == ["1_1_1_control_deviation"]
 
 
+# S6-02: valve position
+def test_outputs_keys_stripped_and_duplicates():
+    assert helpers.normalize_outputs({"8": 0, " 6": 0, " 7": 0}) == {"8": 0, "6": 0, "7": 0}
+    for value in ({}, None, [], "x", 5):
+        assert helpers.normalize_outputs(value) == {}
+    LOGS.messages.clear()
+    assert helpers.normalize_outputs({" 6": 0, "6 ": 99, "7": 25}) == {"6": 99, "7": 25}
+    assert any("reported twice" in message for message in LOGS.messages)
+
+
+def test_valve_position_values():
+    assert helpers.valve_position({}) is None
+    assert helpers.valve_position({"1": 0, "2": 1}) == 0.5          # relay 0/1
+    assert helpers.valve_position({"1": 1}) == 1.0
+    assert helpers.valve_position({"1": 0, "2": 25, "3": 99}) == 41.33
+    assert helpers.valve_position({"12": 99}) == 99.0
+    # bool and non-numeric strings are ignored, numeric strings count
+    assert helpers.valve_position({"1": True, "2": False, "3": 50}) == 50.0
+    assert helpers.valve_position({"1": "an", "2": None, "3": "25"}) == 25.0
+    assert helpers.valve_position({"1": True, "2": "aus", "3": "nan"}) is None
+
+
+def test_valve_entity():
+    room = {"id": 3, "name": "Badezimmer", "temperatur": 23.0, "ausgang": {" 3": 25, "4": 75}}
+    entity, coordinator = room_sensor_entity(room, "valve")
+    assert entity._attr_unique_id == "1_5_3_valve"
+    assert entity.entity_id == "sensor.controme_badezimmer_valve"
+    assert entity._attr_native_value == 50.0 and entity.available
+    assert entity.extra_state_attributes["outputs"] == {"3": 25, "4": 75}
+    description = entity.entity_description
+    assert description.native_unit_of_measurement == "%"
+    assert description.state_class == "MEASUREMENT"
+    assert description.icon == "mdi:valve"
+    assert description.entity_registry_enabled_default is False
+    # /outs/ failed: no "ausgang" in the new data, so the sensor is unavailable
+    coordinator.data = [{"id": 5, "raeume": [{"id": 3, "name": "Badezimmer"}]}]
+    entity._handle_coordinator_update()
+    assert not entity.available and entity.extra_state_attributes["outputs"] == {}
+
+
+def test_valve_only_for_rooms_with_outputs():
+    data = [{"id": 1, "raeume": [
+        {"id": 1, "name": "A", "ausgang": {"9": 0}},
+        {"id": 2, "name": "Flur OG", "ausgang": {}},
+        {"id": 3, "name": "Testraum"},
+        {"id": 4, "name": "D", "ausgang": [0]},
+    ]}]
+    ids = entity_ids(collect_entities(data))
+    assert [uid for uid in ids if uid.endswith("_valve")] == ["1_1_1_valve"]
+
+
+def test_hvac_action_unchanged_by_valve():
+    # _hvac_action_from_outputs still uses the raw outputs (any value > 0 heats)
+    room = {"id": 13, "name": "R", "betriebsart": "Heating", "ausgang": {" 6": 0, "7": 25}}
+    room["floor_id"], room["room_id"] = 5, 13
+    entity = climate.ContromeClimate(FakeCoordinator([{"id": 5, "raeume": [room]}]), make_entry(), room, {})
+    assert entity._attr_hvac_action == ha_stubs.HVACAction.HEATING
+
+
 def run(namespace):
     failures = 0
     skipped = 0

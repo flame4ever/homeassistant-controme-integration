@@ -114,6 +114,9 @@
             },
             "control_deviation": {
                 "name": "Regelabweichung"
+            },
+            "valve": {
+                "name": "Ventilstellung"
             }
         },
         "binary_sensor": {
