@@ -156,17 +156,14 @@
         "write_failed": {
             "message": "Controme did not accept the change ({error})."
         },
-        "mode_not_applied": {
-            "message": "Controme did not apply the HVAC mode {mode}, it still reports \"{value}\"."
-        },
         "unknown_scene": {
             "message": "Controme has no scene with ID {scene_id}. Known scenes: {scenes}."
         },
-        "unsupported_hvac_mode": {
-            "message": "The HVAC mode {mode} cannot be set, only heat and off are supported."
-        },
         "not_a_room": {
             "message": "Room ID {room_id} is not a real Controme room (floor without rooms or room without ID), so nothing can be set for it."
+        },
+        "hvac_mode_not_supported": {
+            "message": "The HVAC mode cannot be switched to {mode} from Home Assistant. Change the operation mode in Controme."
         }
     }
 }

@@ -16,26 +16,21 @@ REQUEST_TIMEOUT = ClientTimeout(total=10)  # 10 Sekunden Timeout
 # Responses are only logged shortened
 MAX_LOGGED_RESPONSE = 200
 
-# Writes are only allowed for a single room: soll/ziel/rooms need a room ID in the URL.
-# Without the room ID, rooms/ and temperaturszenen/ would change ALL rooms.
-ROOM_WRITE_PATH = re.compile(r"^/set/json/v1/[0-9]+/(soll|ziel|rooms)/([0-9]+)/$")
+# Writes are only allowed for a single room: soll/ziel need a room ID in the URL.
+# Without the room ID, temperaturszenen/ would change ALL rooms.
+ROOM_WRITE_PATH = re.compile(r"^/set/json/v1/[0-9]+/(soll|ziel)/([0-9]+)/$")
 SCENE_WRITE_PATH = re.compile(r"^/set/json/v1/[0-9]+/temperaturszenen/([0-9]+)/$")
 ROOM_ID = re.compile(r"^[0-9]+$")
 
 
 def room_write_url(base_url: str, house_id: Any, kind: str, room_id: Any) -> str:
-    """Return the write URL of a room ("soll", "ziel" or "rooms")."""
+    """Return the write URL of a room ("soll" or "ziel")."""
     return f"{base_url.rstrip('/')}/set/json/v1/{house_id}/{kind}/{room_id}/"
 
 
 def scene_write_url(base_url: str, house_id: Any, scene_id: Any) -> str:
     """Return the write URL of a scene, the room is sent as room_id in the body."""
     return f"{base_url.rstrip('/')}/set/json/v1/{house_id}/temperaturszenen/{scene_id}/"
-
-
-def room_read_url(base_url: str, house_id: Any, room_id: Any) -> str:
-    """Return the read URL (/temps/) of a single room."""
-    return f"{base_url.rstrip('/')}/get/json/v1/{house_id}/temps/{room_id}/"
 
 
 def scenes_read_url(base_url: str, house_id: Any) -> str:
@@ -46,8 +41,8 @@ def scenes_read_url(base_url: str, house_id: Any) -> str:
 def check_single_room_write(endpoint: str, data: Dict[str, Any]) -> None:
     """Raise ValueError unless the write targets exactly one room.
 
-    POSTs to /rooms/ without a room ID or to /temperaturszenen/{id}/ without
-    room_id would change all rooms, so they are never sent.
+    POSTs to /temperaturszenen/{id}/ without room_id would change all rooms,
+    so they are never sent.
     """
     path = urlsplit(endpoint).path
     if ROOM_WRITE_PATH.match(path):

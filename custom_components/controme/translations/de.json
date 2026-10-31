@@ -156,17 +156,14 @@
         "write_failed": {
             "message": "Controme hat die Änderung nicht übernommen ({error})."
         },
-        "mode_not_applied": {
-            "message": "Controme hat die Betriebsart {mode} nicht übernommen und meldet weiterhin \"{value}\"."
-        },
         "unknown_scene": {
             "message": "Controme hat keine Szene mit der ID {scene_id}. Bekannte Szenen: {scenes}."
         },
-        "unsupported_hvac_mode": {
-            "message": "Die Betriebsart {mode} kann nicht gesetzt werden, nur Heizen und Aus werden unterstützt."
-        },
         "not_a_room": {
             "message": "Raum-ID {room_id} ist kein echter Controme-Raum (Etage ohne Räume oder Raum ohne ID), daher kann dafür nichts gesetzt werden."
+        },
+        "hvac_mode_not_supported": {
+            "message": "Die Betriebsart kann in Home Assistant nicht auf {mode} umgeschaltet werden. Ändern Sie die Betriebsart in Controme."
         }
     }
 }

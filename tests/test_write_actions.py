@@ -20,16 +20,6 @@ from custom_components.controme import api, climate, helpers, services  # noqa: 
 
 SESSION = ha_stubs.SESSION
 HVACMode = ha_stubs.HVACMode
-SLEEPS = []
-
-
-async def _fake_sleep(seconds):
-    SLEEPS.append(seconds)
-
-
-climate.asyncio.sleep = _fake_sleep
-
-
 class FakeCoordinator:
     def __init__(self, data):
         self.data = data
@@ -54,9 +44,6 @@ def make_climate(room=None):
     return climate.ContromeClimate(coordinator, entry, room, {}), coordinator
 
 
-def temps_room(betriebsart):
-    """A /temps/13/ response (list of floors) reporting the given betriebsart."""
-    return FakeResponse(payload=[{"id": 5, "raeume": [{"id": 13, "betriebsart": betriebsart}]}])
 FakeResponse = ha_stubs.FakeResponse
 BASE = "http://controme.local"
 USER, PASSWORD = "ha-user", "s3cret-pw"
@@ -143,6 +130,7 @@ def test_guard_blocks_writes_without_room():
         (f"{BASE}/set/json/v1/1/temperaturszenen/1/", {"room_id": "1,2"}),
         (f"{BASE}/set/json/v1/1/temperaturszenen/", {"room_id": "13"}),
         (f"{BASE}/set/json/v1/1/rooms/1_0/", {"action": "betriebsart", "value": "off"}),
+        (f"{BASE}/set/json/v1/1/rooms/13/", {"action": "betriebsart", "value": "off"}),
         (f"{BASE}/set/json/v1/1/rooms/13/extra/", {"action": "betriebsart", "value": "off"}),
         (f"{BASE}/set/json/v1/1/quickui/", {"duration": "60"}),
         (f"{BASE}/set/json/v1/1/rooms/?id=13", {"action": "betriebsart", "value": "off"}),
@@ -192,86 +180,43 @@ def test_climate_set_temperature_soll():
     assert coordinator.refreshes == 1
 
 
-# S4-02: hvac mode
-def test_hvac_modes():
+# R8-01: hvac mode is read only again (same as 2.1.0)
+def test_hvac_modes_only_reported_mode():
     entity, _ = make_climate()
-    assert entity._attr_hvac_modes == [HVACMode.HEAT, HVACMode.OFF]
+    assert entity._attr_hvac_modes == [HVACMode.HEAT]
     assert entity._attr_hvac_mode == HVACMode.HEAT
-    cooling, _ = make_climate({"id": 13, "name": "R", "betriebsart": "cooling"})
-    assert cooling._attr_hvac_modes == [HVACMode.HEAT, HVACMode.OFF, HVACMode.COOL]
-    assert cooling._attr_hvac_mode == HVACMode.COOL
-
-
-def test_set_hvac_mode_off_and_heat_confirmed():
-    for mode, value, reported in ((HVACMode.OFF, "off", "off"), (HVACMode.HEAT, "heating", "Heating")):
-        reset()
-        SLEEPS.clear()
-        entity, coordinator = make_climate()
-        SESSION.get_responses.extend([temps_room("Heating" if mode == HVACMode.OFF else "off"),
-                                      temps_room(reported)])
-        asyncio.run(entity.async_set_hvac_mode(mode))
-        assert SESSION.posts == [{
-            "url": "http://controme.local/set/json/v1/1/rooms/13/",
-            "data": {"action": "betriebsart", "value": value, "user": USER, "password": PASSWORD},
-            "timeout": api.REQUEST_TIMEOUT,
-        }]
-        assert SESSION.gets == ["http://controme.local/get/json/v1/1/temps/13/"] * 2
-        assert SLEEPS == [2, 3], SLEEPS
+    assert entity._attr_supported_features == ha_stubs.ClimateEntityFeature.TARGET_TEMPERATURE
+    for betriebsart, mode in (("off", HVACMode.OFF), ("cooling", HVACMode.COOL), (1, HVACMode.COOL)):
+        entity, _ = make_climate({"id": 13, "name": "R", "betriebsart": betriebsart})
+        assert entity._attr_hvac_modes == [mode]
         assert entity._attr_hvac_mode == mode
-        assert coordinator.refreshes == 1
+    assert "async_turn_on" not in vars(climate.ContromeClimate)
+    assert "async_turn_off" not in vars(climate.ContromeClimate)
 
 
-def test_set_hvac_mode_not_applied():
+def test_set_hvac_mode_never_writes():
+    for mode in (HVACMode.OFF, HVACMode.COOL):
+        reset()
+        entity, coordinator = make_climate()
+        err = raises(ha_stubs.ServiceValidationError, asyncio.run, entity.async_set_hvac_mode(mode))
+        assert (err.translation_domain, err.translation_key) == ("controme", "hvac_mode_not_supported")
+        assert err.translation_placeholders == {"mode": str(mode)}
+        assert SESSION.posts == [] and SESSION.gets == []
+        assert coordinator.refreshes == 0
+    # The current mode is a no-op
     reset()
-    SLEEPS.clear()
-    entity, coordinator = make_climate()
-    SESSION.get_responses.extend([temps_room("Heating")] * 3)
-    err = raises(ha_stubs.HomeAssistantError, asyncio.run, entity.async_set_hvac_mode(HVACMode.OFF))
-    assert err.translation_key == "mode_not_applied"
-    assert err.translation_placeholders == {"mode": "off", "value": "Heating"}
-    assert SLEEPS == [2, 3, 5]
-    assert coordinator.refreshes == 1
-
-
-def test_set_hvac_mode_unreadable_counts_as_applied():
-    reset()
-    SLEEPS.clear()
-    entity, coordinator = make_climate()
-    SESSION.get_responses.extend([TimeoutError(), FakeResponse(500), FakeResponse(payload=[])])
-    asyncio.run(entity.async_set_hvac_mode(HVACMode.OFF))
-    assert len(SESSION.posts) == 1 and coordinator.refreshes == 1
-
-
-def test_set_hvac_mode_cool_never_sent():
-    reset()
-    entity, _ = make_climate({"id": 13, "name": "R", "betriebsart": "cooling"})
-    err = raises(ha_stubs.ServiceValidationError, asyncio.run, entity.async_set_hvac_mode(HVACMode.COOL))
-    assert err.translation_key == "unsupported_hvac_mode"
+    entity, _ = make_climate()
+    asyncio.run(entity.async_set_hvac_mode(HVACMode.HEAT))
     assert SESSION.posts == []
-    assert set(climate.HVAC_MODE_TO_BETRIEBSART.values()) == {"heating", "off"}
 
 
-def test_set_hvac_mode_synthetic_room():
+def test_synthetic_room_error_translated():
     reset()
     entity, _ = make_climate({"name": "Floor", "temperatur": 20.0, "betriebsart": "Heating"})
-    err = raises(ha_stubs.ServiceValidationError, asyncio.run, entity.async_set_hvac_mode(HVACMode.OFF))
+    err = raises(ha_stubs.ServiceValidationError, asyncio.run, entity.async_set_temperature(temperature=21.0))
     assert (err.translation_domain, err.translation_key) == ("controme", "not_a_room")
     assert err.translation_placeholders == {"room_id": "5_0"}
     assert SESSION.posts == []
-
-
-def test_turn_on_off():
-    entity, _ = make_climate()
-    features = ha_stubs.ClimateEntityFeature
-    assert entity._attr_supported_features == (
-        features.TARGET_TEMPERATURE | features.TURN_ON | features.TURN_OFF)
-    for method, value in ((entity.async_turn_off, "off"), (entity.async_turn_on, "heating")):
-        reset()
-        SLEEPS.clear()
-        SESSION.get_responses.append(temps_room(value))
-        asyncio.run(method())
-        assert SESSION.posts[0]["url"] == "http://controme.local/set/json/v1/1/rooms/13/"
-        assert SESSION.posts[0]["data"]["value"] == value
 
 
 def test_services_need_loaded_entry():

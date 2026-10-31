@@ -41,26 +41,6 @@ def find_room(data: Optional[List[Dict[str, Any]]], floor_id: Any, room_id: Any)
             return room
     return None
 
-def find_room_by_id(data: Any, room_id: Any) -> Optional[Dict[str, Any]]:
-    """Return the room with the given ID from a /temps/ or /temps/{room}/ response.
-
-    The response can be a list of floors with "raeume" or a single room dict.
-    """
-    items = [data] if isinstance(data, dict) else data
-    if not isinstance(items, list):
-        return None
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        # Floors have "raeume", their ID is no room ID
-        if "raeume" not in item and str(item.get("id")) == str(room_id):
-            return item
-        rooms = item.get("raeume")
-        for room in rooms if isinstance(rooms, list) else []:
-            if isinstance(room, dict) and str(room.get("id")) == str(room_id):
-                return room
-    return None
-
 def parse_scenes(data: Any) -> Dict[int, str]:
     """Return {scene ID: name} from a /temperaturszenen/ response, skipping invalid entries.
 

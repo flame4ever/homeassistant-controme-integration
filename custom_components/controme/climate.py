@@ -1,5 +1,4 @@
 """Support for Controme climate devices."""
-import asyncio
 import logging
 from typing import Any
 
@@ -23,7 +22,6 @@ from homeassistant.util import slugify
 from .api import (
     async_get_json,
     async_post,
-    room_read_url,
     room_write_url,
     scene_write_url,
     scenes_read_url,
@@ -31,7 +29,6 @@ from .api import (
 from .coordinator import ContromeConfigEntry
 from .helpers import (
     find_room,
-    find_room_by_id,
     is_synthetic_room,
     iter_rooms,
     parse_mode_end,
@@ -65,15 +62,6 @@ BETRIEBSART_TO_HVAC_MODE = {
     1: HVACMode.COOL,
     2: HVACMode.HEAT,
 }
-
-# Modes that can be written; "cooling" and "on" are never sent
-HVAC_MODE_TO_BETRIEBSART = {
-    HVACMode.HEAT: "heating",
-    HVACMode.OFF: "off",
-}
-# Seconds after the POST at which the room is read back (#22: values read back
-# immediately can still show the old mode)
-READBACK_DELAYS = (2, 5, 10)
 
 def betriebsart_to_hvac_mode(betriebsart: Any) -> HVACMode:
     """Map a Controme betriebsart to an HVAC mode, defaulting to heating."""
@@ -133,15 +121,10 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
     _attr_target_temperature_step = TEMPERATURE_STEP
     _attr_min_temp = MIN_TEMPERATURE
     _attr_max_temp = MAX_TEMPERATURE
-    # Heating and off can be switched, a different reported mode is added in _update_from_data
-    _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
+    # The mode follows the Controme betriebsart, switching it is not implemented
+    _attr_hvac_modes = [HVACMode.HEAT]
     _attr_hvac_mode = HVACMode.HEAT
-    # With OFF in hvac_modes, turn on (heating) and turn off are supported
-    _attr_supported_features = (
-        ClimateEntityFeature.TARGET_TEMPERATURE
-        | ClimateEntityFeature.TURN_ON
-        | ClimateEntityFeature.TURN_OFF
-    )
+    _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
 
     def __init__(self, coordinator, config_entry, room_data, device_info):
         """Initialize the climate device."""
@@ -167,11 +150,9 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         self._attr_current_temperature = to_float(data.get("temperatur"))
         self._attr_target_temperature = to_float(data.get("solltemperatur"))
         self._attr_current_humidity = to_float(data.get("luftfeuchte"))
+        # Only the current mode is offered, as it cannot be switched from Home Assistant
         self._attr_hvac_mode = betriebsart_to_hvac_mode(data.get("betriebsart"))
-        # Heating and off can be selected; a reported mode like cooling is shown, but not sent
-        self._attr_hvac_modes = list(HVAC_MODE_TO_BETRIEBSART)
-        if self._attr_hvac_mode not in self._attr_hvac_modes:
-            self._attr_hvac_modes.append(self._attr_hvac_mode)
+        self._attr_hvac_modes = [self._attr_hvac_mode]
         self._attr_hvac_action = self._hvac_action_from_outputs(data.get("ausgang"))
         self._temporary_attributes = self._temporary_attributes_from_data(data)
 
@@ -248,68 +229,17 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         service.async_get_config_entry(self.hass, DOMAIN, self._entry_id)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Switch the Controme betriebsart of this room to heating or off."""
-        self._check_real_room()
-        betriebsart = HVAC_MODE_TO_BETRIEBSART.get(hvac_mode)
-        if betriebsart is None:
-            # e.g. cooling, which is shown when reported but never sent
+        """Reject mode changes, the betriebsart can only be changed in Controme.
+
+        The firmware rejects the documented betriebsart write (HTTP 400), so
+        nothing is sent; selecting the current mode does nothing.
+        """
+        if hvac_mode != self._attr_hvac_mode:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
-                translation_key="unsupported_hvac_mode",
+                translation_key="hvac_mode_not_supported",
                 translation_placeholders={"mode": str(hvac_mode)},
             )
-
-        await self._async_write(
-            room_write_url(self._base_url, self._house_id, "rooms", self._room_id),
-            {"action": "betriebsart", "value": betriebsart},
-        )
-
-        # Show the new mode until the read back confirms or contradicts it
-        self._attr_hvac_mode = hvac_mode
-        self._attr_hvac_action = HVACAction.OFF if hvac_mode == HVACMode.OFF else None
-        self.async_write_ha_state()
-
-        applied, reported = await self._async_read_back_mode(hvac_mode)
-        await self.coordinator.async_request_refresh()
-        if not applied:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN,
-                translation_key="mode_not_applied",
-                translation_placeholders={"mode": str(hvac_mode), "value": str(reported)},
-            )
-
-    async def async_turn_on(self) -> None:
-        """Turn the room on, which means heating."""
-        await self.async_set_hvac_mode(HVACMode.HEAT)
-
-    async def async_turn_off(self) -> None:
-        """Turn the room off."""
-        await self.async_set_hvac_mode(HVACMode.OFF)
-
-    async def _async_read_back_mode(self, hvac_mode: HVACMode) -> tuple[bool, Any]:
-        """Read the room back after the POST; return (applied, reported betriebsart).
-
-        If the room cannot be read at all, the mode counts as applied, the
-        coordinator refresh shows the actual state.
-        """
-        url = room_read_url(self._base_url, self._house_id, self._room_id)
-        waited = 0
-        reported = None
-        read_any = False
-        for delay in READBACK_DELAYS:
-            await asyncio.sleep(delay - waited)
-            waited = delay
-            room = find_room_by_id(await async_get_json(self.hass, url), self._room_id)
-            if room is None:
-                continue
-            read_any = True
-            reported = room.get("betriebsart")
-            if betriebsart_to_hvac_mode(reported) == hvac_mode:
-                return True, reported
-        if read_any:
-            _LOGGER.debug("Room %s reports betriebsart %r after setting %s",
-                          self._room_id, reported, hvac_mode)
-        return not read_any, reported
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
