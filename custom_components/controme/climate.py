@@ -1,4 +1,5 @@
 """Support for Controme climate devices."""
+import asyncio
 import logging
 from typing import Any
 
@@ -18,9 +19,9 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
-from .api import async_post, room_write_url
+from .api import async_get_json, async_post, room_read_url, room_write_url
 from .coordinator import ContromeConfigEntry
-from .helpers import find_room, is_synthetic_room, iter_rooms, to_float
+from .helpers import find_room, find_room_by_id, is_synthetic_room, iter_rooms, to_float
 from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,6 +40,15 @@ BETRIEBSART_TO_HVAC_MODE = {
     1: HVACMode.COOL,
     2: HVACMode.HEAT,
 }
+
+# Modes that can be written; "cooling" and "on" are never sent
+HVAC_MODE_TO_BETRIEBSART = {
+    HVACMode.HEAT: "heating",
+    HVACMode.OFF: "off",
+}
+# Seconds after the POST at which the room is read back (#22: values read back
+# immediately can still show the old mode)
+READBACK_DELAYS = (2, 5, 10)
 
 def betriebsart_to_hvac_mode(betriebsart: Any) -> HVACMode:
     """Map a Controme betriebsart to an HVAC mode, defaulting to heating."""
@@ -98,8 +108,8 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
     _attr_target_temperature_step = 0.5
     _attr_min_temp = 5
     _attr_max_temp = 30
-    # The mode follows the Controme betriebsart, switching it is not implemented
-    _attr_hvac_modes = [HVACMode.HEAT]
+    # Heating and off can be switched, a different reported mode is added in _update_from_data
+    _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_hvac_mode = HVACMode.HEAT
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
 
@@ -126,9 +136,11 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         self._attr_current_temperature = to_float(data.get("temperatur"))
         self._attr_target_temperature = to_float(data.get("solltemperatur"))
         self._attr_current_humidity = to_float(data.get("luftfeuchte"))
-        # Only the current mode is offered, as it cannot be switched from Home Assistant
         self._attr_hvac_mode = betriebsart_to_hvac_mode(data.get("betriebsart"))
-        self._attr_hvac_modes = [self._attr_hvac_mode]
+        # Heating and off can be selected; a reported mode like cooling is shown, but not sent
+        self._attr_hvac_modes = list(HVAC_MODE_TO_BETRIEBSART)
+        if self._attr_hvac_mode not in self._attr_hvac_modes:
+            self._attr_hvac_modes.append(self._attr_hvac_mode)
         self._attr_hvac_action = self._hvac_action_from_outputs(data.get("ausgang"))
 
     def _hvac_action_from_outputs(self, ausgang: Any) -> HVACAction | None:
@@ -170,12 +182,69 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         """Send a write request for this room via the central API helper."""
         return await async_post(self.hass, endpoint, data, self._user, self._password)
 
-    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Set the HVAC mode; only the current Controme mode can be selected."""
-        if hvac_mode != self._attr_hvac_mode:
-            raise HomeAssistantError(
-                f"Switching the HVAC mode to {hvac_mode} is not supported, change it in Controme"
+    def _check_real_room(self) -> None:
+        """Raise ServiceValidationError for floors without rooms and rooms without ID."""
+        if self._synthetic_room:
+            raise ServiceValidationError(
+                f"Room ID {self._room_id} is not a real Controme room, the target "
+                "temperature can only be set for rooms with their own room ID"
             )
+
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        """Switch the Controme betriebsart of this room to heating or off."""
+        self._check_real_room()
+        betriebsart = HVAC_MODE_TO_BETRIEBSART.get(hvac_mode)
+        if betriebsart is None:
+            # e.g. cooling, which is shown when reported but never sent
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unsupported_hvac_mode",
+                translation_placeholders={"mode": str(hvac_mode)},
+            )
+
+        await self._async_write(
+            room_write_url(self._base_url, self._house_id, "rooms", self._room_id),
+            {"action": "betriebsart", "value": betriebsart},
+        )
+
+        # Show the new mode until the read back confirms or contradicts it
+        self._attr_hvac_mode = hvac_mode
+        self._attr_hvac_action = HVACAction.OFF if hvac_mode == HVACMode.OFF else None
+        self.async_write_ha_state()
+
+        applied, reported = await self._async_read_back_mode(hvac_mode)
+        await self.coordinator.async_request_refresh()
+        if not applied:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="mode_not_applied",
+                translation_placeholders={"mode": str(hvac_mode), "value": str(reported)},
+            )
+
+    async def _async_read_back_mode(self, hvac_mode: HVACMode) -> tuple[bool, Any]:
+        """Read the room back after the POST; return (applied, reported betriebsart).
+
+        If the room cannot be read at all, the mode counts as applied, the
+        coordinator refresh shows the actual state.
+        """
+        url = room_read_url(self._base_url, self._house_id, self._room_id)
+        waited = 0
+        reported = None
+        read_any = False
+        for delay in READBACK_DELAYS:
+            await asyncio.sleep(delay - waited)
+            waited = delay
+            room = find_room_by_id(await async_get_json(self.hass, url), self._room_id)
+            if room is None:
+                continue
+            read_any = True
+            reported = room.get("betriebsart")
+            if betriebsart_to_hvac_mode(reported) == hvac_mode:
+                return True, reported
+        if read_any:
+            _LOGGER.debug("Room %s reports betriebsart %r after setting %s",
+                          self._room_id, reported, hvac_mode)
+        return not read_any, reported
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
@@ -183,11 +252,7 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         if temperature is None:
             return
 
-        if self._synthetic_room:
-            raise ServiceValidationError(
-                f"Room ID {self._room_id} is not a real Controme room, the target "
-                "temperature can only be set for rooms with their own room ID"
-            )
+        self._check_real_room()
 
         await self._async_write(
             room_write_url(self._base_url, self._house_id, "soll", self._room_id),

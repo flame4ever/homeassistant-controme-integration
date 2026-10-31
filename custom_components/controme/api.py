@@ -33,6 +33,11 @@ def scene_write_url(base_url: str, house_id: Any, scene_id: Any) -> str:
     return f"{base_url.rstrip('/')}/set/json/v1/{house_id}/temperaturszenen/{scene_id}/"
 
 
+def room_read_url(base_url: str, house_id: Any, room_id: Any) -> str:
+    """Return the read URL (/temps/) of a single room."""
+    return f"{base_url.rstrip('/')}/get/json/v1/{house_id}/temps/{room_id}/"
+
+
 def check_single_room_write(endpoint: str, data: Dict[str, Any]) -> None:
     """Raise ValueError unless the write targets exactly one room.
 

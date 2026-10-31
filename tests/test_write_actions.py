@@ -14,9 +14,46 @@ import ha_stubs  # noqa: E402
 
 ha_stubs.install(timezone(timedelta(hours=1)))
 
-from custom_components.controme import api  # noqa: E402
+from custom_components.controme import api, climate  # noqa: E402
 
 SESSION = ha_stubs.SESSION
+HVACMode = ha_stubs.HVACMode
+SLEEPS = []
+
+
+async def _fake_sleep(seconds):
+    SLEEPS.append(seconds)
+
+
+climate.asyncio.sleep = _fake_sleep
+
+
+class FakeCoordinator:
+    def __init__(self, data):
+        self.data = data
+        self.hass = object()
+        self.last_update_success = True
+        self.refreshes = 0
+
+    async def async_request_refresh(self):
+        self.refreshes += 1
+
+
+def make_climate(room=None):
+    """Return a climate entity for room 13 (or the given room dict) on floor 5."""
+    room = room or {"id": 13, "name": "Testraum", "temperatur": 21.7, "solltemperatur": 21.0,
+                    "betriebsart": "Heating"}
+    floor = {"id": 5, "raeume": [room]}
+    room["floor_id"], room["room_id"] = 5, room.get("id", "5_0")
+    entry = type("Entry", (), {"data": {"api_url": BASE, "haus_id": "1", "user": USER,
+                                        "password": PASSWORD}, "options": {}})()
+    coordinator = FakeCoordinator([floor])
+    return climate.ContromeClimate(coordinator, entry, room, {}), coordinator
+
+
+def temps_room(betriebsart):
+    """A /temps/13/ response (list of floors) reporting the given betriebsart."""
+    return FakeResponse(payload=[{"id": 5, "raeume": [{"id": 13, "betriebsart": betriebsart}]}])
 FakeResponse = ha_stubs.FakeResponse
 BASE = "http://controme.local"
 USER, PASSWORD = "ha-user", "s3cret-pw"
@@ -140,6 +177,82 @@ def test_response_logged_shortened_without_credentials():
     assert any("x" * api.MAX_LOGGED_RESPONSE in message for message in LOGS.messages)
     assert not any("x" * (api.MAX_LOGGED_RESPONSE + 1) in message for message in LOGS.messages)
     assert_no_credentials(*LOGS.messages)
+
+
+# S4-01: set_temperature (soll) through the climate entity
+def test_climate_set_temperature_soll():
+    reset()
+    entity, coordinator = make_climate()
+    asyncio.run(entity.async_set_temperature(temperature=21.5))
+    assert [p["url"] for p in SESSION.posts] == ["http://controme.local/set/json/v1/1/soll/13/"]
+    assert SESSION.posts[0]["data"] == {"soll": "21.5", "user": USER, "password": PASSWORD}
+    assert coordinator.refreshes == 1
+
+
+# S4-02: hvac mode
+def test_hvac_modes():
+    entity, _ = make_climate()
+    assert entity._attr_hvac_modes == [HVACMode.HEAT, HVACMode.OFF]
+    assert entity._attr_hvac_mode == HVACMode.HEAT
+    cooling, _ = make_climate({"id": 13, "name": "R", "betriebsart": "cooling"})
+    assert cooling._attr_hvac_modes == [HVACMode.HEAT, HVACMode.OFF, HVACMode.COOL]
+    assert cooling._attr_hvac_mode == HVACMode.COOL
+
+
+def test_set_hvac_mode_off_and_heat_confirmed():
+    for mode, value, reported in ((HVACMode.OFF, "off", "off"), (HVACMode.HEAT, "heating", "Heating")):
+        reset()
+        SLEEPS.clear()
+        entity, coordinator = make_climate()
+        SESSION.get_responses.extend([temps_room("Heating" if mode == HVACMode.OFF else "off"),
+                                      temps_room(reported)])
+        asyncio.run(entity.async_set_hvac_mode(mode))
+        assert SESSION.posts == [{
+            "url": "http://controme.local/set/json/v1/1/rooms/13/",
+            "data": {"action": "betriebsart", "value": value, "user": USER, "password": PASSWORD},
+            "timeout": api.REQUEST_TIMEOUT,
+        }]
+        assert SESSION.gets == ["http://controme.local/get/json/v1/1/temps/13/"] * 2
+        assert SLEEPS == [2, 3], SLEEPS
+        assert entity._attr_hvac_mode == mode
+        assert coordinator.refreshes == 1
+
+
+def test_set_hvac_mode_not_applied():
+    reset()
+    SLEEPS.clear()
+    entity, coordinator = make_climate()
+    SESSION.get_responses.extend([temps_room("Heating")] * 3)
+    err = raises(ha_stubs.HomeAssistantError, asyncio.run, entity.async_set_hvac_mode(HVACMode.OFF))
+    assert err.translation_key == "mode_not_applied"
+    assert err.translation_placeholders == {"mode": "off", "value": "Heating"}
+    assert SLEEPS == [2, 3, 5]
+    assert coordinator.refreshes == 1
+
+
+def test_set_hvac_mode_unreadable_counts_as_applied():
+    reset()
+    SLEEPS.clear()
+    entity, coordinator = make_climate()
+    SESSION.get_responses.extend([TimeoutError(), FakeResponse(500), FakeResponse(payload=[])])
+    asyncio.run(entity.async_set_hvac_mode(HVACMode.OFF))
+    assert len(SESSION.posts) == 1 and coordinator.refreshes == 1
+
+
+def test_set_hvac_mode_cool_never_sent():
+    reset()
+    entity, _ = make_climate({"id": 13, "name": "R", "betriebsart": "cooling"})
+    err = raises(ha_stubs.ServiceValidationError, asyncio.run, entity.async_set_hvac_mode(HVACMode.COOL))
+    assert err.translation_key == "unsupported_hvac_mode"
+    assert SESSION.posts == []
+    assert set(climate.HVAC_MODE_TO_BETRIEBSART.values()) == {"heating", "off"}
+
+
+def test_set_hvac_mode_synthetic_room():
+    reset()
+    entity, _ = make_climate({"name": "Floor", "temperatur": 20.0, "betriebsart": "Heating"})
+    raises(ha_stubs.ServiceValidationError, asyncio.run, entity.async_set_hvac_mode(HVACMode.OFF))
+    assert SESSION.posts == []
 
 
 def run(namespace):

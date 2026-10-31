@@ -171,6 +171,7 @@ def install(time_zone):
             setattr(sys.modules[parent], child, sys.modules[name])
     modules = sys.modules
     modules["homeassistant.core"].callback = lambda func: func
+    modules["homeassistant.const"].ATTR_TEMPERATURE = "temperature"
     modules["homeassistant.exceptions"].HomeAssistantError = HomeAssistantError
     modules["homeassistant.exceptions"].ServiceValidationError = ServiceValidationError
     modules["homeassistant.components.climate"].HVACMode = HVACMode
