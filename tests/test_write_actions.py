@@ -16,7 +16,7 @@ import ha_stubs  # noqa: E402
 ha_stubs.install(timezone(timedelta(hours=1)))
 
 import custom_components.controme as integration  # noqa: E402
-from custom_components.controme import api, climate, services  # noqa: E402
+from custom_components.controme import api, climate, helpers, services  # noqa: E402
 
 SESSION = ha_stubs.SESSION
 HVACMode = ha_stubs.HVACMode
@@ -432,6 +432,76 @@ def test_no_scene_service_or_code():
     assert [name for _domain, name, _kwargs in registry] == ["set_temporary_temperature"]
     assert "scene" not in [str(platform).lower() for platform in integration.PLATFORMS]
     assert "async_activate_scene" not in vars(climate.ContromeClimate)
+
+
+# S4b-02: pre-check of the scene list
+TEST_LABEL = "Test (ßÜÖÄüöä) / Testraum (ßÜÖÄüöä)"
+ALL_LABELS = [f"Etage {n} / Raum {n}" for n in range(1, 11)] + [TEST_LABEL]
+STAR_SCENE = {"id": 1, "Name": "*", "raeume": [
+    {"active": True, "temperatur": 21.0, "name": label} for label in ALL_LABELS]}
+TEST_SCENE = {"id": 2, "Name": "HA-Test", "raeume": [
+    {"active": False, "temperatur": 21.5, "name": TEST_LABEL}]}
+LIVE_SCENES = [STAR_SCENE, TEST_SCENE]
+
+
+def check_scene(scenes, scene_id, label=TEST_LABEL, labels=None):
+    return helpers.check_scene_for_room(scenes, scene_id, label, ALL_LABELS if labels is None else labels)
+
+
+def test_scene_check_single_room_ok():
+    # "active": false does not matter, every listed room belongs to the scene
+    assert check_scene(LIVE_SCENES, 2) is None
+    assert check_scene([{"id": "2", "name": "lower", "raeume": TEST_SCENE["raeume"]}], 2) is None
+
+
+def test_scene_check_star_scene_rejected():
+    key, placeholders = check_scene(LIVE_SCENES, 1)
+    assert key == "scene_not_single_room"
+    assert placeholders["scene"] == "*" and placeholders["scene_id"] == "1"
+    assert placeholders["rooms"].count(" / ") == 11
+
+
+def test_scene_check_other_room_and_empty():
+    assert check_scene(LIVE_SCENES, 2, label="Etage 1 / Raum 1")[0] == "scene_not_single_room"
+    foreign = [{"id": 3, "Name": "Other", "raeume": [{"active": True, "name": "Etage 2 / Raum 2"}]}]
+    assert check_scene(foreign, 3)[0] == "scene_not_single_room"
+    empty = [{"id": 4, "Name": "Empty", "raeume": []}]
+    assert check_scene(empty, 4) == ("scene_not_single_room", {"scene_id": "4", "scene": "Empty", "rooms": "-"})
+    # A single room plus an inactive second room is still two rooms
+    two = [{"id": 5, "Name": "Two", "raeume": [{"active": True, "name": TEST_LABEL},
+                                                {"active": False, "name": "Etage 1 / Raum 1"}]}]
+    assert check_scene(two, 5)[0] == "scene_not_single_room"
+
+
+def test_scene_check_unknown_and_unreadable():
+    assert check_scene(LIVE_SCENES, 99) == ("unknown_scene", {"scene_id": "99"})
+    for scenes in (None, {}, "text", [{"id": 2, "Name": "x"}], [{"id": 2, "raeume": "x"}],
+                   [{"id": 2, "raeume": [{"active": True}]}], [{"id": 2, "raeume": [None]}],
+                   [{"id": 2, "raeume": [{"name": 13}]}], [TEST_SCENE, TEST_SCENE]):
+        assert check_scene(scenes, 2) == ("scene_list_unavailable", {}), scenes
+    assert check_scene([{"Name": "no id"}, {"id": True}, {"id": "x"}, None], 2)[0] == "unknown_scene"
+
+
+def test_scene_check_names_normalized():
+    import unicodedata
+    decomposed = unicodedata.normalize("NFD", TEST_LABEL)
+    variants = [decomposed, TEST_LABEL.upper(), "  Test (ßÜÖÄüöä)  /  Testraum   (ßÜÖÄüöä) "]
+    for name in variants:
+        scenes = [{"id": 2, "Name": "HA-Test", "raeume": [{"active": True, "name": name}]}]
+        assert check_scene(scenes, 2) is None, name
+    # casefold: "ß" equals "ss"
+    assert check_scene(LIVE_SCENES, 2, label="test (ssüöäüöä) / testraum (ssüöäüöä)") is None
+
+
+def test_scene_check_ambiguous_room_name():
+    key, placeholders = check_scene(LIVE_SCENES, 2, labels=ALL_LABELS + [TEST_LABEL.lower()])
+    assert key == "scene_room_ambiguous" and placeholders == {"room": TEST_LABEL}
+
+
+def test_room_labels_from_temps():
+    data = [{"id": 5, "etagenname": "Test (ßÜÖÄüöä)", "raeume": [{"id": 13, "name": "Testraum (ßÜÖÄüöä)"}]},
+            {"id": 6, "raeume": [{"id": 14, "name": "Bad"}, {"id": 15}, None]}, None, {"id": 7, "raeume": "x"}]
+    assert helpers.room_labels(data) == [(5, 13, TEST_LABEL), (6, 14, " / Bad")]
 
 
 def run(namespace):
