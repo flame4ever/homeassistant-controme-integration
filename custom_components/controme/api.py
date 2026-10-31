@@ -26,12 +26,18 @@ def room_write_url(base_url: str, house_id: Any, kind: str, room_id: Any) -> str
     return f"{base_url.rstrip('/')}/set/json/v1/{house_id}/{kind}/{room_id}/"
 
 
-def check_single_room_write(endpoint: str) -> None:
-    """Raise ValueError unless the write targets exactly one room."""
-    path = urlsplit(endpoint).path
-    if ROOM_WRITE_PATH.match(path):
-        return
-    raise ValueError(f"Refusing Controme write without a single room: {path}")
+def check_single_room_write(base_url: str, endpoint: str) -> None:
+    """Raise a translated HomeAssistantError unless the write targets exactly one room.
+
+    The path is checked relative to the configured base URL, so base URLs with
+    a path prefix (e.g. http://host/controme) work.
+    """
+    base = base_url.rstrip('/')
+    relative = endpoint[len(base):] if endpoint.startswith(base + "/") else ""
+    # Query strings or fragments are never part of a room write
+    if not ROOM_WRITE_PATH.match(relative) or urlsplit(endpoint).query or "#" in endpoint:
+        _LOGGER.debug("Refusing Controme write without a single room: %s", endpoint)
+        raise HomeAssistantError(translation_domain=DOMAIN, translation_key="invalid_write_target")
 
 
 def _safe_for_log(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -40,14 +46,19 @@ def _safe_for_log(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def async_post(
-    hass: HomeAssistant, endpoint: str, data: Dict[str, Any], user: str, password: str
+    hass: HomeAssistant,
+    base_url: str,
+    endpoint: str,
+    data: Dict[str, Any],
+    user: str,
+    password: str,
 ) -> str:
     """POST form data plus credentials to a single room endpoint and return the response text.
 
-    Raises ValueError for writes that would affect more than one room and a
-    translated HomeAssistantError (auth_failed or write_failed) on errors.
+    Raises a translated HomeAssistantError: invalid_write_target for writes that
+    do not target exactly one room (nothing is sent), auth_failed or write_failed.
     """
-    check_single_room_write(endpoint)
+    check_single_room_write(base_url, endpoint)
     session = async_get_clientsession(hass)
     _LOGGER.debug("Controme write: URL=%s, Data=%s", endpoint, _safe_for_log(data))
     try:

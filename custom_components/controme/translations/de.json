@@ -147,6 +147,9 @@
         },
         "hvac_mode_not_supported": {
             "message": "Die Betriebsart kann in Home Assistant nicht auf {mode} umgeschaltet werden. Ändern Sie die Betriebsart in Controme."
+        },
+        "invalid_write_target": {
+            "message": "Eine Änderung, die nicht genau einen Controme-Raum betrifft, wurde nicht gesendet."
         }
     }
 }

@@ -147,6 +147,9 @@
         },
         "hvac_mode_not_supported": {
             "message": "The HVAC mode cannot be switched to {mode} from Home Assistant. Change the operation mode in Controme."
+        },
+        "invalid_write_target": {
+            "message": "Refused to send a change that does not target exactly one Controme room."
         }
     }
 }

@@ -210,7 +210,7 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
 
     async def _async_write(self, endpoint: str, data: dict[str, Any]) -> str:
         """Send a write request for this room via the central API helper."""
-        return await async_post(self.hass, endpoint, data, self._user, self._password)
+        return await async_post(self.hass, self._base_url, endpoint, data, self._user, self._password)
 
     def _check_real_room(self) -> None:
         """Raise ServiceValidationError for floors without rooms and rooms without ID."""

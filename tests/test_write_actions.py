@@ -72,8 +72,8 @@ def reset():
     SESSION.get_responses.clear()
 
 
-def post(endpoint, data):
-    return asyncio.run(api.async_post(None, endpoint, data, USER, PASSWORD))
+def post(endpoint, data, base_url=None):
+    return asyncio.run(api.async_post(None, base_url or BASE, endpoint, data, USER, PASSWORD))
 
 
 def raises(exc_type, func, *args):
@@ -131,8 +131,45 @@ def test_guard_blocks_writes_without_room():
         (f"{BASE}/set/json/v1/1/rooms/?id=13", {"action": "betriebsart", "value": "off"}),
     ]
     for endpoint, data in blocked:
-        raises(ValueError, post, endpoint, data)
+        err = raises(ha_stubs.HomeAssistantError, post, endpoint, data)
+        assert (err.translation_domain, err.translation_key) == ("controme", "invalid_write_target")
     assert SESSION.posts == [], SESSION.posts
+
+
+# R8-04: guard relative to the base URL (path prefix)
+def test_guard_with_path_prefix():
+    for base in ("http://host/controme", "http://host/controme/", "https://host:8443/a/b"):
+        reset()
+        url = api.room_write_url(base, "1", "ziel", 13)
+        assert url == f"{base.rstrip('/')}/set/json/v1/1/ziel/13/"
+        post(url, {"ziel": "21.5", "duration": "default"}, base_url=base)
+        assert [p["url"] for p in SESSION.posts] == [url]
+    blocked = [
+        # Prefixed endpoint but base URL without the prefix (and vice versa)
+        ("http://host", "http://host/controme/set/json/v1/1/soll/13/"),
+        ("http://host/controme", "http://host/set/json/v1/1/soll/13/"),
+        # Other host or a base URL that is only a string prefix
+        ("http://host", "http://other/set/json/v1/1/soll/13/"),
+        ("http://host/con", "http://host/controme/set/json/v1/1/soll/13/"),
+        # Prefix, but no room
+        ("http://host/controme", "http://host/controme/set/json/v1/1/rooms/"),
+        ("http://host/controme", "http://host/controme/set/json/v1/1/temperaturszenen/1/"),
+        ("http://host/controme", "http://host/controme/set/json/v1/1/soll/13/?x=1"),
+        ("http://host/controme", "http://host/controme/set/json/v1/1/soll/13/#x"),
+    ]
+    reset()
+    for base, endpoint in blocked:
+        err = raises(ha_stubs.HomeAssistantError, post, endpoint, {"soll": "21.0"}, base)
+        assert err.translation_key == "invalid_write_target", endpoint
+    assert SESSION.posts == []
+
+
+def test_climate_with_path_prefix():
+    reset()
+    entity, _ = make_climate()
+    entity._base_url = "http://host/controme"
+    asyncio.run(entity.async_set_temperature(temperature=21.0))
+    assert SESSION.posts[0]["url"] == "http://host/controme/set/json/v1/1/soll/13/"
 
 
 # S4-01: error mapping
