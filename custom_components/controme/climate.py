@@ -15,11 +15,10 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from aiohttp import ClientError, ClientTimeout
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
+from .api import async_post, room_write_url
 from .coordinator import ContromeConfigEntry
 from .helpers import find_room, is_synthetic_room, iter_rooms, to_float
 from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD
@@ -27,7 +26,6 @@ from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD
 _LOGGER = logging.getLogger(__name__)
 # Send temperature changes to the Controme system one at a time
 PARALLEL_UPDATES = 1
-REQUEST_TIMEOUT = ClientTimeout(total=10)  # 10 Sekunden Timeout
 
 # Controme documents "heating", "cooling", "off" and "on"; some firmwares report
 # capitalized strings ("Heating") or integers (0 = off, 1 = cooling, 2 = heating).
@@ -168,6 +166,10 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         """Return device info."""
         return self._device_info
 
+    async def _async_write(self, endpoint: str, data: dict[str, Any]) -> str:
+        """Send a write request for this room via the central API helper."""
+        return await async_post(self.hass, endpoint, data, self._user, self._password)
+
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set the HVAC mode; only the current Controme mode can be selected."""
         if hvac_mode != self._attr_hvac_mode:
@@ -187,44 +189,10 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
                 "temperature can only be set for rooms with their own room ID"
             )
 
-        session = async_get_clientsession(self.hass)
-        endpoint = f"{self._base_url}/set/json/v1/{self._house_id}/soll/{self._room_id}/"
-        
-        data = {
-            "user": self._user,
-            "password": self._password,
-            "soll": str(float(temperature))
-        }
-        
-        try:
-            # Log request details for debugging
-            _LOGGER.debug("Setting temperature: URL=%s, Data=%s", endpoint, {**data, 'password': '***'})
-            
-            async with session.post(
-                endpoint,
-                data=data,
-                headers={
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Accept': 'application/json'
-                },
-                timeout=REQUEST_TIMEOUT,
-            ) as response:
-                response_text = await response.text()
-        except (ClientError, TimeoutError) as ex:
-            raise HomeAssistantError(f"Error communicating with Controme while setting temperature: {ex}") from ex
-
-        if response.status in (401, 403):
-            _LOGGER.debug("Auth failed: URL=%s, User=%s, Response=%s",
-                        endpoint, self._user, response_text)
-            raise HomeAssistantError(
-                "Authentication failed when setting temperature. Check your Controme credentials."
-            )
-        if response.status != 200:
-            raise HomeAssistantError(
-                f"Error setting temperature: status={response.status}, response={response_text}"
-            )
-
-        _LOGGER.debug("Successfully set temperature: %s", response_text)
+        await self._async_write(
+            room_write_url(self._base_url, self._house_id, "soll", self._room_id),
+            {"soll": str(float(temperature))},
+        )
 
         # Set local value immediately for responsive UI
         self._attr_target_temperature = temperature
