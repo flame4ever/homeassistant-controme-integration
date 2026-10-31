@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.2.0 (2026-10-31)
 
 ### New Features
 - **Temporary Temperature** (#3): New service `controme.set_temporary_temperature` for Controme climate entities (temperature 5-30 °C in steps of 0.5, optional duration 1-1440 minutes, otherwise the Controme default duration). The new value is shown right away and confirmed by a refresh about 10 seconds later. The duration is only approximate, a normal `climate.set_temperature` ends the temporary value, and the API reports no status of the temporary mode (the attributes `temporary_mode`, `temporary_until` and `permanent_target_temperature` only appear if a firmware reports these documented fields).
@@ -9,6 +9,7 @@
 - **Errors**: All errors are translated (English and German), including wrong credentials ("Authentication failed"), failed writes and the rejected HVAC mode change.
 - **Config Flow**: The fields API URL, username and password have descriptions; the password description says that the credentials are only checked when something is written.
 - **Documentation**: README section on removing the integration.
+- **Brand**: The integration ships its own `brand/` folder (icon and logo, the same files as in the home-assistant/brands repository), as now expected by HACS and preferred by Home Assistant 2026.3 and newer.
 - The HVAC mode stays read only as in 2.1.0. Existing entity IDs, unique IDs and values are unchanged.
 
 ### Not Included (removed after the live test)
