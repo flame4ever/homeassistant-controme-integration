@@ -295,7 +295,7 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
             self._unsub_delayed_refresh()
             self._unsub_delayed_refresh = None
 
-    async def async_will_remove_from_hass(self) -> None:
-        """Cancel a pending delayed refresh when the entity is removed or unloaded."""
-        self._cancel_delayed_refresh()
-        await super().async_will_remove_from_hass()
+    async def async_added_to_hass(self) -> None:
+        """Register the cancellation of a pending delayed refresh for removal/unload."""
+        await super().async_added_to_hass()
+        self.async_on_remove(self._cancel_delayed_refresh)

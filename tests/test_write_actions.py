@@ -321,11 +321,18 @@ def test_ziel_delayed_refresh_cancelled_on_remove():
     reset()
     ha_stubs.CALL_LATER.clear()
     entity, coordinator = make_climate()
+    asyncio.run(entity.async_added_to_hass())
     asyncio.run(entity.async_set_temporary_temperature(temperature=21.5))
-    asyncio.run(entity.async_will_remove_from_hass())
+    # Cancelled via async_on_remove, without overriding async_will_remove_from_hass
+    assert "async_will_remove_from_hass" not in vars(climate.ContromeClimate)
+    entity.simulate_remove()
     assert ha_stubs.CALL_LATER[0]["cancelled"] is True
-    assert entity.removed is True
+    assert entity._unsub_delayed_refresh is None
     assert coordinator.refreshes == 0
+    # Removal without a pending refresh is fine as well
+    entity, _ = make_climate()
+    asyncio.run(entity.async_added_to_hass())
+    entity.simulate_remove()
 
 
 def test_ziel_synthetic_room():

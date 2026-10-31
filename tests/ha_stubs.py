@@ -102,11 +102,13 @@ class CoordinatorEntity:
     async def async_added_to_hass(self):
         pass
 
-    async def async_will_remove_from_hass(self):
-        self.removed = True
-
     def async_on_remove(self, func):
-        pass
+        self.__dict__.setdefault("on_remove", []).append(func)
+
+    def simulate_remove(self):
+        """Call the async_on_remove callbacks like HA does on removal/unload."""
+        for func in self.__dict__.pop("on_remove", []):
+            func()
 
     def async_write_ha_state(self):
         self.writes += 1
