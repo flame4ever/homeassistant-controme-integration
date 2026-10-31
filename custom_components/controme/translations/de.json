@@ -110,5 +110,55 @@
                 "name": "Übertragungsproblem"
             }
         }
+    },
+    "services": {
+        "set_temporary_temperature": {
+            "name": "Temporäre Temperatur setzen",
+            "description": "Setzt eine temporäre Solltemperatur für die ausgewählten Controme-Räume. Jeder ausgewählte Raum wird einzeln gesetzt.",
+            "fields": {
+                "temperature": {
+                    "name": "Temperatur",
+                    "description": "Temporäre Solltemperatur (5-30 °C in Schritten von 0,5)."
+                },
+                "duration": {
+                    "name": "Dauer",
+                    "description": "Dauer in Minuten (1-1440). Ohne Dauer verwendet Controme seine Standarddauer."
+                }
+            }
+        },
+        "activate_scene": {
+            "name": "Szene aktivieren",
+            "description": "Aktiviert eine Controme-Temperaturszene nur für die ausgewählten Räume. Jeder ausgewählte Raum wird einzeln mit seiner Raum-ID gesendet, nie für alle Räume.",
+            "fields": {
+                "scene_id": {
+                    "name": "Szenen-ID",
+                    "description": "ID der Controme-Temperaturszene."
+                },
+                "duration": {
+                    "name": "Dauer",
+                    "description": "Dauer in Minuten (1-1440). Ohne Dauer bleibt die Szene bis zum nächsten Wechsel aktiv."
+                }
+            }
+        }
+    },
+    "exceptions": {
+        "auth_failed": {
+            "message": "Anmeldung fehlgeschlagen. Prüfen Sie Benutzername und Passwort von Controme."
+        },
+        "write_failed": {
+            "message": "Controme hat die Änderung nicht übernommen ({error})."
+        },
+        "mode_not_applied": {
+            "message": "Controme hat die Betriebsart {mode} nicht übernommen und meldet weiterhin \"{value}\"."
+        },
+        "unknown_scene": {
+            "message": "Controme hat keine Szene mit der ID {scene_id}. Bekannte Szenen: {scenes}."
+        },
+        "unsupported_hvac_mode": {
+            "message": "Die Betriebsart {mode} kann nicht gesetzt werden, nur Heizen und Aus werden unterstützt."
+        },
+        "not_a_room": {
+            "message": "Raum-ID {room_id} ist kein echter Controme-Raum (Etage ohne Räume oder Raum ohne ID), daher kann dafür nichts gesetzt werden."
+        }
     }
 }

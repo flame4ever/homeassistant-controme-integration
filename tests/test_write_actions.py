@@ -3,6 +3,7 @@
 Run with: python tests/test_write_actions.py
 """
 import asyncio
+import json
 import logging
 from datetime import timedelta, timezone
 from pathlib import Path
@@ -47,7 +48,8 @@ def make_climate(room=None):
     floor = {"id": 5, "raeume": [room]}
     room["floor_id"], room["room_id"] = 5, room.get("id", "5_0")
     entry = type("Entry", (), {"data": {"api_url": BASE, "haus_id": "1", "user": USER,
-                                        "password": PASSWORD}, "options": {}})()
+                                        "password": PASSWORD}, "options": {},
+                               "entry_id": "entry1"})()
     coordinator = FakeCoordinator([floor])
     return climate.ContromeClimate(coordinator, entry, room, {}), coordinator
 
@@ -252,8 +254,56 @@ def test_set_hvac_mode_cool_never_sent():
 def test_set_hvac_mode_synthetic_room():
     reset()
     entity, _ = make_climate({"name": "Floor", "temperatur": 20.0, "betriebsart": "Heating"})
-    raises(ha_stubs.ServiceValidationError, asyncio.run, entity.async_set_hvac_mode(HVACMode.OFF))
+    err = raises(ha_stubs.ServiceValidationError, asyncio.run, entity.async_set_hvac_mode(HVACMode.OFF))
+    assert (err.translation_domain, err.translation_key) == ("controme", "not_a_room")
+    assert err.translation_placeholders == {"room_id": "5_0"}
     assert SESSION.posts == []
+
+
+def test_turn_on_off():
+    entity, _ = make_climate()
+    features = ha_stubs.ClimateEntityFeature
+    assert entity._attr_supported_features == (
+        features.TARGET_TEMPERATURE | features.TURN_ON | features.TURN_OFF)
+    for method, value in ((entity.async_turn_off, "off"), (entity.async_turn_on, "heating")):
+        reset()
+        SLEEPS.clear()
+        SESSION.get_responses.append(temps_room(value))
+        asyncio.run(method())
+        assert SESSION.posts[0]["url"] == "http://controme.local/set/json/v1/1/rooms/13/"
+        assert SESSION.posts[0]["data"]["value"] == value
+
+
+def test_services_need_loaded_entry():
+    ha_stubs.UNLOADED_ENTRIES.add("entry1")
+    try:
+        for call in ({"temperature": 21.0}, {"scene_id": 1}):
+            reset()
+            entity, _ = make_climate()
+            method = (entity.async_set_temporary_temperature if "temperature" in call
+                      else entity.async_activate_scene)
+            err = raises(ha_stubs.ServiceValidationError, asyncio.run, method(**call))
+            assert err.translation_key == "service_config_entry_not_loaded"
+            assert SESSION.posts == [] and SESSION.gets == []
+    finally:
+        ha_stubs.UNLOADED_ENTRIES.clear()
+
+
+def test_all_raised_errors_are_translated():
+    # Every HomeAssistantError/ServiceValidationError raised in the integration
+    # uses translation_domain/translation_key and no plain text message
+    import re
+    package = ha_stubs.ROOT / "custom_components" / "controme"
+    translations = json.loads((package / "translations" / "en.json").read_text(encoding="utf-8"))
+    used = set()
+    for path in package.glob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        for match in re.finditer(r"raise (HomeAssistantError|ServiceValidationError)\(([^)]*)", source):
+            assert "translation_key=" in match.group(2), f"{path.name}: {match.group(0)}"
+            assert "translation_domain=DOMAIN" in match.group(2), f"{path.name}: {match.group(0)}"
+            used.update(re.findall(r'translation_key="([a-z_]+)"', match.group(2)))
+    assert used, "no translated errors found"
+    assert used <= set(translations["exceptions"]), used - set(translations["exceptions"])
 
 
 # S4-03: temporary temperature

@@ -46,6 +46,12 @@ class HVACMode(enum.StrEnum):
     COOL = "cool"
 
 
+class ClimateEntityFeature(enum.IntFlag):
+    TARGET_TEMPERATURE = 1
+    TURN_OFF = 128
+    TURN_ON = 256
+
+
 class HVACAction(enum.StrEnum):
     OFF = "off"
     HEATING = "heating"
@@ -147,6 +153,19 @@ class FakeSession:
 
 
 SESSION = FakeSession()
+# Config entry IDs that service.async_get_config_entry treats as not loaded
+UNLOADED_ENTRIES = set()
+
+
+def async_get_config_entry(hass, domain, entry_id):
+    """Like HA 2026.9.1: translated ServiceValidationError for a missing/unloaded entry."""
+    if entry_id in UNLOADED_ENTRIES:
+        raise ServiceValidationError(
+            translation_domain="homeassistant",
+            translation_key="service_config_entry_not_loaded",
+            translation_placeholders={"domain": domain, "entry_title": entry_id},
+        )
+    return entry_id
 
 _MODULES = [
     "homeassistant", "homeassistant.config_entries", "homeassistant.core",
@@ -176,6 +195,8 @@ def install(time_zone):
     modules["homeassistant.exceptions"].ServiceValidationError = ServiceValidationError
     modules["homeassistant.components.climate"].HVACMode = HVACMode
     modules["homeassistant.components.climate"].HVACAction = HVACAction
+    modules["homeassistant.components.climate"].ClimateEntityFeature = ClimateEntityFeature
+    modules["homeassistant.helpers.service"].async_get_config_entry = async_get_config_entry
     modules["homeassistant.components.climate"].DOMAIN = "climate"
     modules["homeassistant.helpers.update_coordinator"].CoordinatorEntity = CoordinatorEntity
     modules["homeassistant.helpers.device_registry"].DeviceInfo = dict

@@ -15,6 +15,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import service
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
@@ -135,7 +136,12 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
     # Heating and off can be switched, a different reported mode is added in _update_from_data
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_hvac_mode = HVACMode.HEAT
-    _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+    # With OFF in hvac_modes, turn on (heating) and turn off are supported
+    _attr_supported_features = (
+        ClimateEntityFeature.TARGET_TEMPERATURE
+        | ClimateEntityFeature.TURN_ON
+        | ClimateEntityFeature.TURN_OFF
+    )
 
     def __init__(self, coordinator, config_entry, room_data, device_info):
         """Initialize the climate device."""
@@ -148,6 +154,7 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         self._house_id = config_entry.data[CONF_HAUS_ID]
         self._user = config_entry.data[CONF_USER]
         self._password = config_entry.data[CONF_PASSWORD]
+        self._entry_id = config_entry.entry_id
         self._attr_unique_id = f"{config_entry.data[CONF_HAUS_ID]}_{self._floor_id}_{self._room_id}_climate"
         self.entity_id = f"climate.controme_{slugify(room_name)}"
         # Floors without rooms and rooms without ID have no real room ID to send to
@@ -231,9 +238,14 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         """Raise ServiceValidationError for floors without rooms and rooms without ID."""
         if self._synthetic_room:
             raise ServiceValidationError(
-                f"Room ID {self._room_id} is not a real Controme room, the target "
-                "temperature can only be set for rooms with their own room ID"
+                translation_domain=DOMAIN,
+                translation_key="not_a_room",
+                translation_placeholders={"room_id": str(self._room_id)},
             )
+
+    def _check_entry_loaded(self) -> None:
+        """Raise a translated ServiceValidationError unless the config entry is loaded."""
+        service.async_get_config_entry(self.hass, DOMAIN, self._entry_id)
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Switch the Controme betriebsart of this room to heating or off."""
@@ -265,6 +277,14 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
                 translation_key="mode_not_applied",
                 translation_placeholders={"mode": str(hvac_mode), "value": str(reported)},
             )
+
+    async def async_turn_on(self) -> None:
+        """Turn the room on, which means heating."""
+        await self.async_set_hvac_mode(HVACMode.HEAT)
+
+    async def async_turn_off(self) -> None:
+        """Turn the room off."""
+        await self.async_set_hvac_mode(HVACMode.OFF)
 
     async def _async_read_back_mode(self, hvac_mode: HVACMode) -> tuple[bool, Any]:
         """Read the room back after the POST; return (applied, reported betriebsart).
@@ -318,6 +338,7 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
 
         Without a duration Controme uses its default duration ("default").
         """
+        self._check_entry_loaded()
         self._check_real_room()
         await self._async_write(
             room_write_url(self._base_url, self._house_id, "ziel", self._room_id),
@@ -337,6 +358,7 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         The scene is always sent with the room_id of this entity; without a
         duration it stays active until the next switch.
         """
+        self._check_entry_loaded()
         self._check_real_room()
         data = await async_get_json(self.hass, scenes_read_url(self._base_url, self._house_id))
         if data is None:
