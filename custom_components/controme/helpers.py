@@ -80,6 +80,16 @@ def parse_transmission(value: Any) -> Optional[datetime]:
         return parsed.replace(tzinfo=dt_util.get_default_time_zone())
     return None
 
+def parse_mode_end(value: Any) -> Optional[datetime]:
+    """Parse "mode_end_datetime" ("YYYY-MM-DD HH:MM:SS", local time) as aware datetime."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.strptime(value.strip(), "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=dt_util.get_default_time_zone())
+
 def transmission_age(timestamp: datetime, now: datetime) -> timedelta:
     """Return the age of a transmission, timestamps in the future have age 0."""
     return max(now - timestamp, timedelta(0))

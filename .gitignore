@@ -1,5 +1,7 @@
 # See http://help.github.com/ignore-files/ for more about ignoring files.
 *.yaml
+# The service descriptions belong to the integration
+!custom_components/controme/services.yaml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

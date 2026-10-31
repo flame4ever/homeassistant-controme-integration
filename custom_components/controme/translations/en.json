@@ -18,6 +18,9 @@
                     "haus_id": "House ID"
                 },
                 "data_description": {
+                    "api_url": "Address of the Controme system, e.g. http://192.168.1.100 (http:// is added if missing).",
+                    "user": "Username of a Controme user that may change temperatures.",
+                    "password": "Password of this Controme user. The credentials are only checked when something is written (e.g. a temperature is set), not during setup.",
                     "haus_id": "House ID of the Controme system (usually 1)."
                 }
             },
@@ -30,6 +33,8 @@
                     "haus_id": "House ID"
                 },
                 "data_description": {
+                    "user": "Username of a Controme user that may change temperatures.",
+                    "password": "Password of this Controme user. The credentials are only checked when something is written (e.g. a temperature is set), not during setup.",
                     "haus_id": "House ID of the Controme system (usually 1)."
                 }
             },
@@ -43,6 +48,9 @@
                     "haus_id": "House ID"
                 },
                 "data_description": {
+                    "api_url": "Controme system found in the network.",
+                    "user": "Username of a Controme user that may change temperatures.",
+                    "password": "Password of this Controme user. The credentials are only checked when something is written (e.g. a temperature is set), not during setup.",
                     "haus_id": "House ID of the Controme system (usually 1)."
                 }
             }
@@ -109,6 +117,39 @@
             "transmission_problem": {
                 "name": "Transmission problem"
             }
+        }
+    },
+    "services": {
+        "set_temporary_temperature": {
+            "name": "Set temporary temperature",
+            "description": "Sets a temporary target temperature for the selected Controme rooms, each room separately. The duration is only approximate (Controme may end it earlier). Setting the temperature normally (climate.set_temperature) ends the temporary value. Controme reports no status of the temporary mode.",
+            "fields": {
+                "temperature": {
+                    "name": "Temperature",
+                    "description": "Temporary target temperature (5-30 °C in steps of 0.5)."
+                },
+                "duration": {
+                    "name": "Duration",
+                    "description": "Approximate duration in minutes (1-1440). Without a duration Controme uses its default duration."
+                }
+            }
+        }
+    },
+    "exceptions": {
+        "auth_failed": {
+            "message": "Authentication failed. Check the Controme username and password."
+        },
+        "write_failed": {
+            "message": "Controme did not accept the change ({error})."
+        },
+        "not_a_room": {
+            "message": "Room ID {room_id} is not a real Controme room (floor without rooms or room without ID), so nothing can be set for it."
+        },
+        "hvac_mode_not_supported": {
+            "message": "The HVAC mode cannot be switched to {mode} from Home Assistant. Change the operation mode in Controme."
+        },
+        "invalid_write_target": {
+            "message": "Refused to send a change that does not target exactly one Controme room."
         }
     }
 }

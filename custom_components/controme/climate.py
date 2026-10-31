@@ -13,21 +13,38 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import service
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from aiohttp import ClientError, ClientTimeout
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
+from .api import async_post, room_write_url
 from .coordinator import ContromeConfigEntry
-from .helpers import find_room, is_synthetic_room, iter_rooms, to_float
-from .const import DOMAIN, CONF_API_URL, CONF_HAUS_ID, CONF_USER, CONF_PASSWORD
+from .helpers import (
+    find_room,
+    is_synthetic_room,
+    iter_rooms,
+    parse_mode_end,
+    to_float,
+)
+from .const import (
+    DOMAIN,
+    CONF_API_URL,
+    CONF_HAUS_ID,
+    CONF_USER,
+    CONF_PASSWORD,
+    MIN_TEMPERATURE,
+    MAX_TEMPERATURE,
+    TEMPERATURE_STEP,
+)
 
 _LOGGER = logging.getLogger(__name__)
 # Send temperature changes to the Controme system one at a time
 PARALLEL_UPDATES = 1
-REQUEST_TIMEOUT = ClientTimeout(total=10)  # 10 Sekunden Timeout
+# Controme reports a temporary temperature only after some seconds, refresh afterwards
+DELAYED_REFRESH_SECONDS = 10
 
 # Controme documents "heating", "cooling", "off" and "on"; some firmwares report
 # capitalized strings ("Heating") or integers (0 = off, 1 = cooling, 2 = heating).
@@ -97,9 +114,9 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
     # The entity takes the name of its room device
     _attr_name = None
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_target_temperature_step = 0.5
-    _attr_min_temp = 5
-    _attr_max_temp = 30
+    _attr_target_temperature_step = TEMPERATURE_STEP
+    _attr_min_temp = MIN_TEMPERATURE
+    _attr_max_temp = MAX_TEMPERATURE
     # The mode follows the Controme betriebsart, switching it is not implemented
     _attr_hvac_modes = [HVACMode.HEAT]
     _attr_hvac_mode = HVACMode.HEAT
@@ -116,11 +133,13 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         self._house_id = config_entry.data[CONF_HAUS_ID]
         self._user = config_entry.data[CONF_USER]
         self._password = config_entry.data[CONF_PASSWORD]
+        self._entry_id = config_entry.entry_id
         self._attr_unique_id = f"{config_entry.data[CONF_HAUS_ID]}_{self._floor_id}_{self._room_id}_climate"
         self.entity_id = f"climate.controme_{slugify(room_name)}"
         # Floors without rooms and rooms without ID have no real room ID to send to
         self._synthetic_room = is_synthetic_room(coordinator.data, room_data)
         self._room_present = True
+        self._unsub_delayed_refresh = None
         self._update_from_data(room_data)
 
     def _update_from_data(self, data):
@@ -132,6 +151,22 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         self._attr_hvac_mode = betriebsart_to_hvac_mode(data.get("betriebsart"))
         self._attr_hvac_modes = [self._attr_hvac_mode]
         self._attr_hvac_action = self._hvac_action_from_outputs(data.get("ausgang"))
+        self._temporary_attributes = self._temporary_attributes_from_data(data)
+
+    @staticmethod
+    def _temporary_attributes_from_data(data) -> dict[str, Any]:
+        """Return the temporary mode attributes, only for fields /temps/ actually reports."""
+        attributes = {}
+        if "is_temporary_mode" in data:
+            value = data["is_temporary_mode"]
+            if isinstance(value, str):
+                value = value.strip().lower() in ("true", "1", "yes")
+            attributes["temporary_mode"] = bool(value)
+        if "mode_end_datetime" in data:
+            attributes["temporary_until"] = parse_mode_end(data["mode_end_datetime"])
+        if "perm_solltemperatur" in data:
+            attributes["permanent_target_temperature"] = to_float(data["perm_solltemperatur"])
+        return attributes
 
     def _hvac_action_from_outputs(self, ausgang: Any) -> HVACAction | None:
         """Derive the HVAC action from the room's output (valve) values."""
@@ -168,11 +203,39 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         """Return device info."""
         return self._device_info
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the temporary mode attributes if Controme reports them."""
+        return self._temporary_attributes
+
+    async def _async_write(self, endpoint: str, data: dict[str, Any]) -> str:
+        """Send a write request for this room via the central API helper."""
+        return await async_post(self.hass, self._base_url, endpoint, data, self._user, self._password)
+
+    def _check_real_room(self) -> None:
+        """Raise ServiceValidationError for floors without rooms and rooms without ID."""
+        if self._synthetic_room:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="not_a_room",
+                translation_placeholders={"room_id": str(self._room_id)},
+            )
+
+    def _check_entry_loaded(self) -> None:
+        """Raise a translated ServiceValidationError unless the config entry is loaded."""
+        service.async_get_config_entry(self.hass, DOMAIN, self._entry_id)
+
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Set the HVAC mode; only the current Controme mode can be selected."""
+        """Reject mode changes, the betriebsart can only be changed in Controme.
+
+        The firmware rejects the documented betriebsart write (HTTP 400), so
+        nothing is sent; selecting the current mode does nothing.
+        """
         if hvac_mode != self._attr_hvac_mode:
-            raise HomeAssistantError(
-                f"Switching the HVAC mode to {hvac_mode} is not supported, change it in Controme"
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="hvac_mode_not_supported",
+                translation_placeholders={"mode": str(hvac_mode)},
             )
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
@@ -181,50 +244,12 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         if temperature is None:
             return
 
-        if self._synthetic_room:
-            raise ServiceValidationError(
-                f"Room ID {self._room_id} is not a real Controme room, the target "
-                "temperature can only be set for rooms with their own room ID"
-            )
+        self._check_real_room()
 
-        session = async_get_clientsession(self.hass)
-        endpoint = f"{self._base_url}/set/json/v1/{self._house_id}/soll/{self._room_id}/"
-        
-        data = {
-            "user": self._user,
-            "password": self._password,
-            "soll": str(float(temperature))
-        }
-        
-        try:
-            # Log request details for debugging
-            _LOGGER.debug("Setting temperature: URL=%s, Data=%s", endpoint, {**data, 'password': '***'})
-            
-            async with session.post(
-                endpoint,
-                data=data,
-                headers={
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Accept': 'application/json'
-                },
-                timeout=REQUEST_TIMEOUT,
-            ) as response:
-                response_text = await response.text()
-        except (ClientError, TimeoutError) as ex:
-            raise HomeAssistantError(f"Error communicating with Controme while setting temperature: {ex}") from ex
-
-        if response.status in (401, 403):
-            _LOGGER.debug("Auth failed: URL=%s, User=%s, Response=%s",
-                        endpoint, self._user, response_text)
-            raise HomeAssistantError(
-                "Authentication failed when setting temperature. Check your Controme credentials."
-            )
-        if response.status != 200:
-            raise HomeAssistantError(
-                f"Error setting temperature: status={response.status}, response={response_text}"
-            )
-
-        _LOGGER.debug("Successfully set temperature: %s", response_text)
+        await self._async_write(
+            room_write_url(self._base_url, self._house_id, "soll", self._room_id),
+            {"soll": str(float(temperature))},
+        )
 
         # Set local value immediately for responsive UI
         self._attr_target_temperature = temperature
@@ -232,3 +257,45 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
 
         # Request a data refresh to update all entities
         await self.coordinator.async_request_refresh()
+
+    async def async_set_temporary_temperature(
+        self, temperature: float, duration: int | None = None
+    ) -> None:
+        """Set a temporary target temperature (service controme.set_temporary_temperature).
+
+        Without a duration Controme uses its default duration ("default").
+        """
+        self._check_entry_loaded()
+        self._check_real_room()
+        await self._async_write(
+            room_write_url(self._base_url, self._house_id, "ziel", self._room_id),
+            {
+                "ziel": str(float(temperature)),
+                "duration": "default" if duration is None else str(duration),
+            },
+        )
+
+        # Show the value right away; Controme reports it only after a few seconds,
+        # an immediate refresh would jump back to the old value
+        self._attr_target_temperature = temperature
+        self.async_write_ha_state()
+        self._cancel_delayed_refresh()
+        self._unsub_delayed_refresh = async_call_later(
+            self.hass, DELAYED_REFRESH_SECONDS, self._async_delayed_refresh
+        )
+
+    async def _async_delayed_refresh(self, _now) -> None:
+        """Refresh the coordinator data after a temporary temperature was set."""
+        self._unsub_delayed_refresh = None
+        await self.coordinator.async_request_refresh()
+
+    def _cancel_delayed_refresh(self) -> None:
+        """Cancel a pending delayed refresh."""
+        if self._unsub_delayed_refresh is not None:
+            self._unsub_delayed_refresh()
+            self._unsub_delayed_refresh = None
+
+    async def async_added_to_hass(self) -> None:
+        """Register the cancellation of a pending delayed refresh for removal/unload."""
+        await super().async_added_to_hass()
+        self.async_on_remove(self._cancel_delayed_refresh)

@@ -21,6 +21,17 @@ DEFAULT_STALE_THRESHOLD: Final = 15
 MIN_STALE_THRESHOLD: Final = 5
 MAX_STALE_THRESHOLD: Final = 1440
 
+# Entity services of the climate entities
+SERVICE_SET_TEMPORARY_TEMPERATURE: Final = "set_temporary_temperature"
+ATTR_DURATION: Final = "duration"
+# Same limits as the climate entities
+MIN_TEMPERATURE: Final = 5
+MAX_TEMPERATURE: Final = 30
+TEMPERATURE_STEP: Final = 0.5
+# Duration of temporary temperatures in minutes
+MIN_DURATION: Final = 1
+MAX_DURATION: Final = 1440
+
 # Platforms are now defined in __init__.py
 
 # New constants

@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### New Features
+- **Temporary Temperature** (#3): New service `controme.set_temporary_temperature` for Controme climate entities (temperature 5-30 °C in steps of 0.5, optional duration 1-1440 minutes, otherwise the Controme default duration). The new value is shown right away and confirmed by a refresh about 10 seconds later. The duration is only approximate, a normal `climate.set_temperature` ends the temporary value, and the API reports no status of the temporary mode (the attributes `temporary_mode`, `temporary_until` and `permanent_target_temperature` only appear if a firmware reports these documented fields).
+
+### Changes
+- **Errors**: All errors are translated (English and German), including wrong credentials ("Authentication failed"), failed writes and the rejected HVAC mode change.
+- **Config Flow**: The fields API URL, username and password have descriptions; the password description says that the credentials are only checked when something is written.
+- **Documentation**: README section on removing the integration.
+- The HVAC mode stays read only as in 2.1.0. Existing entity IDs, unique IDs and values are unchanged.
+
+### Not Included (removed after the live test)
+- **Switching the HVAC mode** (#4, #22): The tested firmware rejects the documented call `POST /rooms/{room}/` with `action=betriebsart` (HTTP 400 "please check the url"). The feature was removed completely; it will only come back with a confirmed working API call.
+- **Activating scenes** (#4): After a scene call with `room_id`, Controme answered with the list of all rooms, so it apparently does not reliably apply the scene to a single room. Because a scene for all rooms is too risky, the service was removed completely.
+
+### Under the Hood
+- Central write helper for set_temperature and the temporary temperature with form encoding, timeout and error mapping. It only sends writes for exactly one room (checked relative to the configured base URL, so URLs with a path prefix work) and refuses everything else with a translated error before sending. Credentials are never logged.
+- The service is registered in `async_setup` and checks that the config entry is loaded; `services.yaml` with selectors and translations.
+- Offline tests for URLs, request bodies, the single-room guard (with and without path prefix), error mapping, the delayed refresh and service limits (`tests/test_write_actions.py`).
+
 ## 2.1.0 (2026-10-30)
 
 ### New Features
