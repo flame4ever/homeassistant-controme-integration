@@ -26,9 +26,14 @@ class FakeCoordinator:
         self.hass = object()
         self.last_update_success = True
         self.refreshes = 0
+        self.scenes = None
+        self.scenes_invalidated = 0
 
     async def async_request_refresh(self):
         self.refreshes += 1
+
+    def invalidate_scenes(self):
+        self.scenes_invalidated += 1
 
 
 def make_climate(room=None):
@@ -473,6 +478,8 @@ def test_activate_scene_single_room():
         # Refresh delayed like for the temporary temperature
         assert [call["delay"] for call in ha_stubs.CALL_LATER] == [climate.DELAYED_REFRESH_SECONDS]
         assert coordinator.refreshes == 0
+        # S6-06: the delayed refresh reads the scene list again
+        assert coordinator.scenes_invalidated == 1
 
 
 def test_activate_scene_rejections_send_nothing():
@@ -493,6 +500,7 @@ def test_activate_scene_rejections_send_nothing():
         assert isinstance(err, ha_stubs.ServiceValidationError) == (key != "scene_list_unavailable"), key
         assert SESSION.posts == [], (room_id, scene_id)
         assert coordinator.refreshes == 0
+        assert coordinator.scenes_invalidated == 0
 
 
 def test_activate_scene_ambiguous_room_name():

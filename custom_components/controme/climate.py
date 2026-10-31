@@ -37,6 +37,7 @@ from .helpers import (
     iter_rooms,
     parse_mode_end,
     room_labels,
+    scenes_for_room,
     to_float,
 )
 from .const import (
@@ -137,6 +138,8 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
     _attr_hvac_modes = [HVACMode.HEAT]
     _attr_hvac_mode = HVACMode.HEAT
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+    # The scene list rarely changes, keep it out of the recorder database
+    _unrecorded_attributes = frozenset({"scenes"})
 
     def __init__(self, coordinator, config_entry, room_data, device_info):
         """Initialize the climate device."""
@@ -168,6 +171,15 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         self._attr_hvac_modes = [self._attr_hvac_mode]
         self._attr_hvac_action = self._hvac_action_from_outputs(data.get("ausgang"))
         self._temporary_attributes = self._temporary_attributes_from_data(data)
+        self._room_scenes = self._room_scenes_from_coordinator()
+
+    def _room_scenes_from_coordinator(self) -> list[dict[str, Any]] | None:
+        """Return the scenes activate_scene would allow for this room, None while the list is unknown."""
+        scenes = self.coordinator.scenes
+        if not isinstance(scenes, list):
+            return None
+        labels, target_label = self._scene_labels()
+        return scenes_for_room(scenes, target_label, [label for _f, _r, label in labels])
 
     @staticmethod
     def _temporary_attributes_from_data(data) -> dict[str, Any]:
@@ -218,8 +230,10 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the temporary mode attributes if Controme reports them."""
-        return self._temporary_attributes
+        """Return the temporary mode attributes if Controme reports them, and the room's scenes."""
+        if self._room_scenes is None:
+            return self._temporary_attributes
+        return {**self._temporary_attributes, "scenes": self._room_scenes}
 
     async def _async_write(self, endpoint: str, data: dict[str, Any]) -> str:
         """Send a write request for this room via the central API helper."""
@@ -335,12 +349,7 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         self._check_real_room()
 
         scenes = await async_get_json(self.hass, scenes_read_url(self._base_url, self._house_id))
-        labels = room_labels(self.coordinator.data)
-        target_label = next(
-            (label for floor_id, room_id, label in labels
-             if floor_id == self._floor_id and room_id == self._room_id),
-            "",
-        )
+        labels, target_label = self._scene_labels()
         problem = check_scene_for_room(scenes, scene_id, target_label, [label for _f, _r, label in labels])
         if problem is not None:
             key, placeholders = problem
@@ -360,8 +369,20 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         response_text = await self._async_write(
             scene_write_url(self._base_url, self._house_id, scene_id), scene_data
         )
+        # The delayed refresh also reads the scene list again
+        self.coordinator.invalidate_scenes()
         self._schedule_delayed_refresh()
         self._check_scene_roomlist(scene_id, response_text, labels)
+
+    def _scene_labels(self) -> tuple[list, str]:
+        """Return the (floor_id, room_id, "Etage / Raum") labels of all rooms and of this room."""
+        labels = room_labels(self.coordinator.data)
+        target_label = next(
+            (label for floor_id, room_id, label in labels
+             if floor_id == self._floor_id and room_id == self._room_id),
+            "",
+        )
+        return labels, target_label
 
     def _check_scene_roomlist(self, scene_id: int, response_text: str, labels: list) -> None:
         """Raise if the scene response lists other rooms than this one.

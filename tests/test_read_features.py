@@ -33,9 +33,13 @@ class FakeCoordinator:
         self.last_update_success = True
         self.hub_device_id = "hub"
         self.refreshes = 0
+        self.scenes = None
 
     async def async_request_refresh(self):
         self.refreshes += 1
+
+    def invalidate_scenes(self):
+        pass
 
 
 def make_entry():
@@ -474,6 +478,164 @@ def test_setup_entry_with_and_without_info():
         assert registry.calls == [base], response
     registry = run_setup_entry(FakeResponse(payload={"hw": "pi4", "sw-date": "2026-02-25"}))
     assert registry.calls == [{**base, "sw_version": "2026-02-25", "hw_version": "pi4"}]
+
+
+# S6-06: scenes
+TEST_LABEL = "Test (ßÜÖÄüöä) / Testraum (ßÜÖÄüöä)"
+ALL_LABELS = [f"Etage {n} / Raum {n}" for n in range(1, 11)] + [TEST_LABEL]
+STAR_SCENE = {"id": 1, "Name": "*", "raeume": [
+    {"active": True, "temperatur": 22.0, "name": label} for label in ALL_LABELS]}
+TEST_SCENE = {"id": 2, "Name": "HA-Test", "raeume": [
+    {"active": False, "temperatur": 21.5, "name": TEST_LABEL}]}
+LIVE_SCENES = [STAR_SCENE, TEST_SCENE]
+
+
+def scene_house():
+    """The 11 rooms of ALL_LABELS (room 13 is the test room)."""
+    floors = [{"id": n, "etagenname": f"Etage {n}", "raeume": [
+        {"id": n, "name": f"Raum {n}", "temperatur": 21.0, "solltemperatur": 21.0}]} for n in range(1, 11)]
+    floors.append({"id": 50, "etagenname": "Test (ßÜÖÄüöä)", "raeume": [
+        {"id": 13, "name": "Testraum (ßÜÖÄüöä)", "temperatur": 21.0, "solltemperatur": 21.0}]})
+    return floors
+
+
+def test_scene_summaries():
+    summaries = helpers.scene_summaries(LIVE_SCENES)
+    assert [(s["id"], s["name"], len(s["rooms"])) for s in summaries] == [(1, "*", 11), (2, "HA-Test", 1)]
+    # "active": false does not matter, the listed room belongs to the scene
+    assert summaries[1]["rooms"] == [TEST_LABEL]
+    assert helpers.scene_summaries(None) == [] and helpers.scene_summaries({}) == []
+    assert helpers.scene_summaries([None, {"id": 3, "raeume": "x"}, {"id": 4, "name": "lower",
+                                    "raeume": [{"name": 5}, None, {"name": "A / B"}]}]) == [
+        {"id": 3, "name": "3", "rooms": []}, {"id": 4, "name": "lower", "rooms": ["A / B"]}]
+
+
+def test_scenes_for_room_uses_scene_check():
+    assert helpers.scenes_for_room(LIVE_SCENES, TEST_LABEL, ALL_LABELS) == [{"id": 2, "name": "HA-Test"}]
+    for label in ALL_LABELS[:-1]:
+        assert helpers.scenes_for_room(LIVE_SCENES, label, ALL_LABELS) == [], label
+    # Not unique room name, duplicate scene IDs or unreadable lists: nothing
+    assert helpers.scenes_for_room(LIVE_SCENES, TEST_LABEL, ALL_LABELS + [TEST_LABEL.lower()]) == []
+    assert helpers.scenes_for_room([TEST_SCENE, TEST_SCENE], TEST_LABEL, ALL_LABELS) == []
+    assert helpers.scenes_for_room(None, TEST_LABEL, ALL_LABELS) == []
+    assert helpers.scenes_for_room([{"id": True, "raeume": TEST_SCENE["raeume"]}], TEST_LABEL, ALL_LABELS) == []
+    # Same result as check_scene_for_room for every scene
+    for scene in LIVE_SCENES:
+        allowed = helpers.check_scene_for_room(LIVE_SCENES, scene["id"], TEST_LABEL, ALL_LABELS) is None
+        assert allowed == (scene["id"] in [s["id"] for s in
+                                           helpers.scenes_for_room(LIVE_SCENES, TEST_LABEL, ALL_LABELS)])
+
+
+def test_climate_scenes_attribute():
+    coordinator = FakeCoordinator(scene_house())
+    coordinator.scenes = LIVE_SCENES
+    climates = {entity.entity_id: entity for entity in collect_entities(coordinator.data, coordinator)
+                if entity.entity_id.startswith("climate.")}
+    assert len(climates) == 11
+    test_room = climates["climate.controme_testraum_ssuoauoa"]
+    assert test_room.extra_state_attributes == {"scenes": [{"id": 2, "name": "HA-Test"}]}
+    for entity_id, entity in climates.items():
+        if entity is not test_room:
+            # Scene "*" (11 rooms) is never part of a room attribute
+            assert entity.extra_state_attributes == {"scenes": []}, entity_id
+    assert climate.ContromeClimate._unrecorded_attributes == frozenset({"scenes"})
+    # Updated with the coordinator; temporary attributes stay as they were
+    coordinator.scenes = [STAR_SCENE]
+    coordinator.data[-1]["raeume"][0]["is_temporary_mode"] = False
+    test_room._handle_coordinator_update()
+    assert test_room.extra_state_attributes == {"temporary_mode": False, "scenes": []}
+
+
+def test_climate_without_scene_list_unchanged():
+    coordinator = FakeCoordinator(scene_house())
+    entities = collect_entities(coordinator.data, coordinator)
+    assert all(entity.extra_state_attributes == {} for entity in entities
+               if entity.entity_id.startswith("climate."))
+
+
+def test_scenes_sensor():
+    coordinator = FakeCoordinator(scene_house())
+    entities = by_unique_id(collect_entities(coordinator.data, coordinator))
+    scenes = entities["1_scenes"]
+    assert scenes.entity_id == "sensor.controme_scenes"
+    assert scenes._attr_translation_key == "scenes"
+    assert scenes._attr_entity_category == "DIAGNOSTIC"
+    assert scenes._attr_device_info == {"identifiers": {("controme", "1")}}
+    assert scenes._unrecorded_attributes == frozenset({"scenes"})
+    assert scenes.native_value is None and scenes.extra_state_attributes == {"scenes": []}
+    coordinator.scenes = LIVE_SCENES
+    assert scenes.native_value == 2
+    attribute = scenes.extra_state_attributes["scenes"]
+    assert attribute[1] == {"id": 2, "name": "HA-Test", "rooms": [TEST_LABEL]}
+    assert len(attribute[0]["rooms"]) == 11
+    coordinator.scenes = []
+    assert scenes.native_value == 0
+
+
+class FakeLoop:
+    def __init__(self):
+        self.now = 1000.0
+
+    def time(self):
+        return self.now
+
+
+def make_real_coordinator():
+    from custom_components.controme import coordinator as coordinator_module
+    real = coordinator_module.ContromeDataUpdateCoordinator(None, make_entry(), BASE, "1")
+    real.hass = type("Hass", (), {"loop": FakeLoop()})()
+    return real, coordinator_module
+
+
+def update(real, scenes_response=None):
+    """Run one coordinator update; /temps/ and /outs/ answer, then the scene list if requested."""
+    reset_session()
+    SESSION.get_responses.extend([FakeResponse(payload=scene_house()), FakeResponse(payload=[])])
+    if scenes_response is not None:
+        SESSION.get_responses.append(scenes_response)
+    data = asyncio.run(real._async_update_data())
+    return data, [url for url in SESSION.gets if url.endswith("/temperaturszenen/")]
+
+
+def test_coordinator_scenes_throttled():
+    real, module = make_real_coordinator()
+    assert real.scenes is None
+    data, reads = update(real, FakeResponse(payload=LIVE_SCENES))
+    assert reads == ["http://controme.local/get/json/v1/1/temperaturszenen/"]
+    assert SESSION.get_timeouts[-1].total == 5
+    assert real.scenes == LIVE_SCENES and len(data) == 11
+    # A second update before 10 minutes does not read the list
+    real.hass.loop.now += module.SCENES_REFRESH_SECONDS - 1
+    _data, reads = update(real)
+    assert reads == [] and real.scenes == LIVE_SCENES
+    # After 10 minutes it is read again
+    real.hass.loop.now += 1
+    _data, reads = update(real, FakeResponse(payload=[TEST_SCENE]))
+    assert len(reads) == 1 and real.scenes == [TEST_SCENE]
+    # activate_scene invalidates the list, the next update reads it at once
+    real.invalidate_scenes()
+    _data, reads = update(real, FakeResponse(payload=LIVE_SCENES))
+    assert len(reads) == 1 and real.scenes == LIVE_SCENES
+    assert SESSION.posts == []
+
+
+def test_coordinator_scene_errors_keep_list():
+    real, module = make_real_coordinator()
+    update(real, FakeResponse(payload=LIVE_SCENES))
+    for response in (TimeoutError(), ha_stubs.ClientError("x"), FakeResponse(500),
+                     FakeResponse(payload=ValueError("no JSON")), FakeResponse(payload={})):
+        real.invalidate_scenes()
+        data, reads = update(real, response)
+        # The main update still returns the data, the last list is kept
+        assert len(reads) == 1 and len(data) == 11, response
+        assert real.scenes == LIVE_SCENES, response
+    # A failed read is not repeated before the interval
+    _data, reads = update(real)
+    assert reads == []
+    # Never read successfully: stays None
+    fresh, _module = make_real_coordinator()
+    update(fresh, TimeoutError())
+    assert fresh.scenes is None
 
 
 def run(namespace):

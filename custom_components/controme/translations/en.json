@@ -120,6 +120,9 @@
             },
             "room_sensor": {
                 "name": "{sensor}"
+            },
+            "scenes": {
+                "name": "Temperature scenes"
             }
         },
         "binary_sensor": {

@@ -133,6 +133,46 @@ def hub_versions(info: Any) -> Dict[str, str]:
         versions["hw_version"] = hardware
     return versions
 
+def scene_int_id(scene: Any) -> Optional[int]:
+    """Return the ID of a scene entry as int (like check_scene_for_room reads it), else None."""
+    if not isinstance(scene, dict) or isinstance(scene.get("id"), bool):
+        return None
+    try:
+        return int(scene.get("id"))
+    except (TypeError, ValueError):
+        return None
+
+def scene_name(scene: Dict[str, Any], scene_id: Any) -> str:
+    """Return the scene name ("Name" in /temperaturszenen/), falling back to the ID."""
+    return str(scene.get("Name") or scene.get("name") or scene_id)
+
+def scene_summaries(scenes: Any) -> List[Dict[str, Any]]:
+    """Return [{id, name, rooms}] for the scene list; rooms are the listed "Etage / Raum" names.
+
+    Every listed room belongs to the scene, "active" is ignored.
+    """
+    summaries = []
+    for scene in scenes if isinstance(scenes, list) else []:
+        if not isinstance(scene, dict):
+            continue
+        rooms = scene.get("raeume")
+        summaries.append({
+            "id": scene.get("id"),
+            "name": scene_name(scene, scene.get("id")),
+            "rooms": [room["name"] for room in rooms if isinstance(room, dict)
+                      and isinstance(room.get("name"), str)] if isinstance(rooms, list) else [],
+        })
+    return summaries
+
+def scenes_for_room(scenes: Any, target_label: str, all_labels: List[str]) -> List[Dict[str, Any]]:
+    """Return [{id, name}] of the scenes check_scene_for_room allows for the target room."""
+    allowed = []
+    for scene in scenes if isinstance(scenes, list) else []:
+        scene_id = scene_int_id(scene)
+        if scene_id is not None and check_scene_for_room(scenes, scene_id, target_label, all_labels) is None:
+            allowed.append({"id": scene_id, "name": scene_name(scene, scene_id)})
+    return allowed
+
 def is_synthetic_room(data: Optional[List[Dict[str, Any]]], room: Dict[str, Any]) -> bool:
     """Return True if the room has no own room ID (room-less floor or room without ID)."""
     return room.get("id") is None or any(floor is room for floor in data or [])

@@ -8,6 +8,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
 )
 from homeassistant.const import (
+    EntityCategory,
     UnitOfTemperature,
     PERCENTAGE,
 )
@@ -28,6 +29,7 @@ from .helpers import (
     iter_rooms,
     normalize_outputs,
     parse_transmission,
+    scene_summaries,
     to_float,
     valve_position,
 )
@@ -224,6 +226,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, asy
     # Transmission monitoring on the hub device
     sensors.append(ContromeLastTransmissionSensor(coordinator, entry))
     sensors.append(ContromeStaleSensorsSensor(coordinator, entry))
+    # Scene list on the hub device, to find scene IDs for controme.activate_scene
+    sensors.append(ContromeScenesSensor(coordinator, entry))
 
     _LOGGER.debug("Created %d sensors in total", len(sensors))
     async_add_entities(sensors)
@@ -476,3 +480,33 @@ class ContromeStaleSensorsSensor(ContromeTransmissionEntity, SensorEntity):
     def native_value(self):
         """Return the number of stale sensors."""
         return self._stale_count
+
+class ContromeScenesSensor(CoordinatorEntity, SensorEntity):
+    """Number of Controme temperature scenes, with the scenes and their rooms as attribute."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "scenes"
+    # The list can be long and rarely changes, keep it out of the recorder database
+    _unrecorded_attributes = frozenset({"scenes"})
+
+    def __init__(self, coordinator, config_entry):
+        """Initialize the sensor on the existing hub device (DOMAIN, haus_id)."""
+        super().__init__(coordinator)
+        house_id = config_entry.data[CONF_HAUS_ID]
+        self._attr_unique_id = f"{house_id}_scenes"
+        # Fixed, language independent entity ID like the other hub entities
+        self.entity_id = "sensor.controme_scenes"
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, house_id)})
+
+    @property
+    def native_value(self):
+        """Return the number of scenes, or None while the scene list was never read."""
+        if self.coordinator.scenes is None:
+            return None
+        return len(scene_summaries(self.coordinator.scenes))
+
+    @property
+    def extra_state_attributes(self):
+        """Return the scenes as [{id, name, rooms}]; every listed room belongs to a scene."""
+        return {"scenes": scene_summaries(self.coordinator.scenes)}
