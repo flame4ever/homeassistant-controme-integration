@@ -310,6 +310,9 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         if problem is not None:
             key, placeholders = problem
             _LOGGER.debug("Scene %s not sent for room %s: %s", scene_id, self._room_id, key)
+            # An unreadable scene list is a Controme problem, not a wrong user input
+            if key == "scene_list_unavailable":
+                raise HomeAssistantError(translation_domain=DOMAIN, translation_key=key)
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key=key,

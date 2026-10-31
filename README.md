@@ -112,7 +112,7 @@ How it works:
 - Before anything is sent, the scene list of Controme is read. A scene contains all rooms it lists (rooms switched off in the scene in Controme are not listed); whether the scene is currently active in a room does not matter.
 - The listed room is matched by its name "Floor / Room" (compared case-insensitively, also with umlauts). The scene is only sent if it lists exactly one room, this room is the room of the selected entity and its name is unique in Controme.
 - Scenes for several rooms, for example the default scene "*", are refused on purpose, as are unknown scene IDs and other rooms. In these cases nothing is sent and a translated error is shown.
-- The request always contains the room ID. If Controme reports that the scene was applied to other rooms as well, an error with these room names is shown and a warning is logged.
+- The request always contains the room ID, but the live test showed that Controme applies a scene to all rooms it lists, regardless of the room ID. The protection of the other rooms therefore relies only on the check above. If Controme reports that the scene was applied to other rooms as well, an error with these room names is shown and a warning is logged.
 - To use a scene for one room, create a scene in Controme that contains only this room. Selecting several climate entities means one check and one request per room.
 
 ```yaml

@@ -487,8 +487,10 @@ def test_activate_scene_rejections_send_nothing():
         reset()
         entity, coordinator = make_scene_climate(room_id)
         SESSION.get_responses.append(FakeResponse(500) if scenes is None else FakeResponse(payload=scenes))
-        err = raises(ha_stubs.ServiceValidationError, scene_call, entity, scene_id=scene_id)
+        err = raises(ha_stubs.HomeAssistantError, scene_call, entity, scene_id=scene_id)
         assert (err.translation_domain, err.translation_key) == ("controme", key), (room_id, scene_id)
+        # Only an unreadable scene list is a Controme problem; the rest are user errors
+        assert isinstance(err, ha_stubs.ServiceValidationError) == (key != "scene_list_unavailable"), key
         assert SESSION.posts == [], (room_id, scene_id)
         assert coordinator.refreshes == 0
 
