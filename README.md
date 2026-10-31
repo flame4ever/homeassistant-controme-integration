@@ -43,6 +43,14 @@ Home Assistant integration for Controme heating systems. This integration allows
 
 **Note on credentials:** During setup the integration only checks that the Controme system is reachable (the read API needs no login). Username and password are only checked when a target temperature is set. If they are wrong, setting a temperature fails with an authentication error.
 
+## Removal
+
+1. Go to Settings -> Devices & Services -> Controme, open the menu of the entry (three dots) and choose "Delete". This removes the devices and entities of the integration from Home Assistant.
+2. If you installed via HACS: open HACS, select "Controme" and choose "Remove" (or "Uninstall"). With a manual installation, delete the folder `custom_components/controme` instead.
+3. Restart Home Assistant.
+
+Nothing is reset on the Controme system: target temperatures, operation modes, temporary temperatures and scenes that were set via Home Assistant stay as they are. Change them in Controme if needed.
+
 ## Entities Created
 
 For each room, the integration creates:
