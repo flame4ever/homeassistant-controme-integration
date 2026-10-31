@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.4.0 (2026-10-31)
+
+### New Features
+- **Control Deviation** (#3): New room sensor `sensor.controme_<room>_control_deviation` in K: current temperature minus target temperature plus total offset, rounded to 0.01 K (negative = too cold). Calculated from the room data without an extra request, enabled by default, without temperature device class so the difference is not converted like an absolute temperature.
+- **Valve Position** (#3): New room sensor `sensor.controme_<room>_valve` (%, disabled by default) with the mean of the room's outputs from `/outs/` and the single outputs in the attribute `outputs` (keys without the spaces Controme sometimes sends). Only for rooms with outputs. On relay systems the values are only 0/1.
+- **Further Room Sensors** (#3): Sensors of a room that are neither the room temperature sensor nor a return sensor get their own entity (`sensor.controme_<room>_sensor_<name>`, disabled by default, named after the Controme description, attributes `sensor_id` and `last_transmission`), but only if the description clearly names humidity or temperature; everything else is skipped and logged at debug level.
+- **Reset Temporary Temperature** (#3): New service `controme.reset_temporary_temperature` for Controme climate entities. It sends the permanent target temperature that Controme reports for the room (`perm_solltemperatur`) as normal target temperature, which ends the temporary value. Without a reported permanent target temperature nothing is sent and a translated error is shown (the tested firmware does not report it); if Controme reports that no temporary temperature is active, nothing is sent.
+- **Scene List** (#4): New diagnostic hub sensor `sensor.controme_scenes` with the number of scenes and the attribute `scenes` (ID, name and rooms of every scene). Climate entities get the attribute `scenes` with exactly the scenes `controme.activate_scene` accepts for the room. The scene list is read during setup, at most every 10 minutes and after a scene was activated; errors keep the last list. Both attributes are excluded from the recorder.
+- **Hub Device Information** (#3): If the firmware reports software date, branch and hardware via `/info/`, they are shown as software and hardware version of the hub device. The request is made once during setup without credentials and with a 5 second timeout; an empty answer or an error changes nothing.
+
+### Notes
+- Heating programs cannot be switched and CPU load, temperature and uptime of the Controme system cannot be shown, because the API offers no calls for them.
+- The total offset keeps the unit °C on purpose; changing it would break the long-term statistics.
+- Thanks to ldoench for PR #24 (hub device link via `via_device_id`). The same change was already part of 2.0.0, so the PR was closed without merging.
+
+### Under the Hood
+- Purely additive: existing entity IDs, unique IDs and values are unchanged. A snapshot test compares all IDs with those of 2.3.0 (`tests/fixtures/entity_ids_2.3.0.json`).
+- The reset service uses the existing single-room write guard; offline tests count that exactly one request is sent with a permanent target temperature and none without.
+- New offline tests for the read features (`tests/test_read_features.py`): formulas with live examples, output and sensor classification, `/info/` errors, scene throttling and errors, translation keys of en and de.
+
 ## 2.3.0 (2026-10-31)
 
 ### New Features
