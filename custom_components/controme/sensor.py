@@ -19,11 +19,15 @@ from homeassistant.util import slugify
 from .coordinator import ContromeConfigEntry
 from .entity import ContromeTransmissionEntity
 from .helpers import (
+    ROOM_SENSOR_KIND_HUMIDITY,
+    ROOM_SENSOR_KIND_TEMPERATURE,
+    classify_room_sensor,
     control_deviation,
     find_room,
     is_return_sensor,
     iter_rooms,
     normalize_outputs,
+    parse_transmission,
     to_float,
     valve_position,
 )
@@ -35,6 +39,7 @@ from .const import (
     SENSOR_TYPE_OPERATION_MODE,
     SENSOR_TYPE_CONTROL_DEVIATION,
     SENSOR_TYPE_VALVE,
+    SENSOR_TYPE_ROOM_SENSOR_PREFIX,
 )
 
 from dataclasses import dataclass
@@ -97,6 +102,24 @@ SENSOR_TYPES: tuple[ContromeSensorEntityDescription, ...] = (
         key=SENSOR_TYPE_VALVE,
         translation_key=SENSOR_TYPE_VALVE,
         icon="mdi:valve",
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=PERCENTAGE,
+        entity_registry_enabled_default=False,
+    ),
+    # Further room sensors (e.g. "LuftFeuchte Bad"), disabled by default as they
+    # often duplicate the room values; the name is the Controme description
+    ContromeSensorEntityDescription(
+        key=f"room_sensor_{ROOM_SENSOR_KIND_TEMPERATURE}",
+        translation_key="room_sensor",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        entity_registry_enabled_default=False,
+    ),
+    ContromeSensorEntityDescription(
+        key=f"room_sensor_{ROOM_SENSOR_KIND_HUMIDITY}",
+        translation_key="room_sensor",
+        device_class=SensorDeviceClass.HUMIDITY,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=PERCENTAGE,
         entity_registry_enabled_default=False,
@@ -178,6 +201,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ContromeConfigEntry, asy
                 )
                 _LOGGER.debug("Return sensor added")
 
+        # Further sensors of the room, only if clearly humidity or temperature
+        seen_names = set()
+        for sensor in room.get("sensoren") or []:
+            if not isinstance(sensor, dict) or sensor.get("raumtemperatursensor") is True:
+                continue
+            if is_return_sensor(sensor.get("beschreibung")):
+                continue
+            name = sensor.get("name")
+            if classify_room_sensor(sensor) is None or name in seen_names:
+                _LOGGER.debug("Skipping sensor %s (%s) of room %s: not clearly humidity or "
+                              "temperature, or reported twice", name, sensor.get("beschreibung"),
+                              room_name)
+                continue
+            seen_names.add(name)
+            sensors.append(
+                ContromeSensor(
+                    coordinator, entry, room, f"{SENSOR_TYPE_ROOM_SENSOR_PREFIX}{name}", device_info
+                )
+            )
+
     # Transmission monitoring on the hub device
     sensors.append(ContromeLastTransmissionSensor(coordinator, entry))
     sensors.append(ContromeStaleSensorsSensor(coordinator, entry))
@@ -190,9 +233,12 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
 
     _attr_has_entity_name = True
 
-    def __init_sensor_description(self, sensor_type: str) -> None:
+    def __init_sensor_description(self, sensor_type: str, room_data) -> None:
         """Initialize the sensor description based on type."""
         base_type = "return" if sensor_type.startswith("return_") else sensor_type
+        if sensor_type.startswith(SENSOR_TYPE_ROOM_SENSOR_PREFIX):
+            # The kind is fixed at creation, so the unit never changes later
+            base_type = f"room_sensor_{classify_room_sensor(self._find_sensor(room_data))}"
         self.entity_description = next(
             (desc for desc in SENSOR_TYPES if desc.key == base_type),
             SENSOR_TYPES[0]  # Fallback to temperature sensor
@@ -202,6 +248,9 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
         """Initialize the entity ID."""
         room_name_lower = slugify(room_name)
         suffix = "return" if sensor_type.startswith("return_") else ENTITY_ID_MAP.get(sensor_type, sensor_type)
+        if sensor_type.startswith(SENSOR_TYPE_ROOM_SENSOR_PREFIX):
+            sensor_name = sensor_type[len(SENSOR_TYPE_ROOM_SENSOR_PREFIX):]
+            suffix = f"{SENSOR_TYPE_ROOM_SENSOR_PREFIX}{slugify(sensor_name)}"
         self.entity_id = f"sensor.controme_{room_name_lower}_{suffix}"
 
     def __init__(self, coordinator, config_entry, room_data, sensor_type, device_info):
@@ -219,7 +268,7 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
         
         # Set unique ID and entity ID
         self._attr_unique_id = f"{self._house_id}_{self._floor_id}_{self._room_id}_{sensor_type}"
-        self.__init_sensor_description(sensor_type)
+        self.__init_sensor_description(sensor_type, room_data)
         self.__init_entity_id(sensor_type, room_data.get("name") or f"room_{self._room_id}")
         # The name comes from the translation_key, return sensors use their Controme description
         if sensor_type.startswith("return_"):
@@ -230,9 +279,28 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
                 None,
             )
             self._attr_translation_placeholders = {"sensor": description or sensor_name}
-        
+        elif sensor_type.startswith(SENSOR_TYPE_ROOM_SENSOR_PREFIX):
+            sensor = self._find_sensor(room_data) or {}
+            self._attr_translation_placeholders = {
+                "sensor": sensor.get("beschreibung") or self._room_sensor_name
+            }
+        self._last_transmission = None
+
         # Set initial values
         self._update_from_data(room_data)
+
+    @property
+    def _room_sensor_name(self) -> str:
+        """Return the Controme sensor name of a further room sensor ("sensor_{name}")."""
+        return self._sensor_type[len(SENSOR_TYPE_ROOM_SENSOR_PREFIX):]
+
+    def _find_sensor(self, room_data):
+        """Return the entry of "sensoren" of a further room sensor, or None if it is gone."""
+        return next(
+            (sensor for sensor in room_data.get("sensoren") or []
+             if isinstance(sensor, dict) and sensor.get("name") == self._room_sensor_name),
+            None,
+        )
 
     @property
     def device_info(self):
@@ -255,6 +323,9 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
         }
         if self._sensor_type == SENSOR_TYPE_VALVE:
             attributes["outputs"] = self._outputs
+        elif self._sensor_type.startswith(SENSOR_TYPE_ROOM_SENSOR_PREFIX):
+            attributes["sensor_id"] = self._room_sensor_name
+            attributes["last_transmission"] = self._last_transmission
         return attributes
 
     @callback
@@ -281,6 +352,17 @@ class ContromeSensor(CoordinatorEntity, SensorEntity):
             else:
                 # The return sensor is no longer reported for this room
                 self._has_value = False
+        elif self._sensor_type.startswith(SENSOR_TYPE_ROOM_SENSOR_PREFIX):
+            sensor = self._find_sensor(room_data)
+            if sensor is None:
+                # The sensor is no longer reported for this room
+                self._has_value = False
+                return
+            value = to_float(sensor.get("wert"))
+            timestamp = parse_transmission(sensor.get("letzte_uebertragung"))
+            self._last_transmission = timestamp.isoformat() if timestamp else None
+            self._attr_native_value = value
+            self._has_value = value is not None
         elif self._sensor_type == SENSOR_TYPE_CONTROL_DEVIATION:
             value = control_deviation(room_data)
             self._attr_native_value = value

@@ -117,6 +117,9 @@
             },
             "valve": {
                 "name": "Valve position"
+            },
+            "room_sensor": {
+                "name": "{sensor}"
             }
         },
         "binary_sensor": {

@@ -122,6 +122,39 @@ def is_return_sensor(description: Optional[str]) -> bool:
         return True
     return re.search(r"rücklauf|\breturn\b", description, re.IGNORECASE) is not None
 
+# Further room sensors are only created if their description clearly names the quantity
+ROOM_SENSOR_HUMIDITY = re.compile(r"feuchte|humid", re.IGNORECASE)
+# "temp" also matches "Temperatur" and "temperature"
+ROOM_SENSOR_TEMPERATURE = re.compile(r"temp", re.IGNORECASE)
+ROOM_SENSOR_KIND_HUMIDITY = "humidity"
+ROOM_SENSOR_KIND_TEMPERATURE = "temperature"
+
+def classify_room_sensor(sensor: Any) -> Optional[str]:
+    """Return "humidity" or "temperature" for a further sensor of a room, else None.
+
+    The room temperature sensor (its value is "temperatur") and return sensors
+    have their own entities. Descriptions that match both or neither quantity are
+    not classified, nothing is guessed.
+    """
+    if not isinstance(sensor, dict):
+        return None
+    name = sensor.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    room_sensor = sensor.get("raumtemperatursensor")
+    if room_sensor is True or (isinstance(room_sensor, str) and room_sensor.strip().lower() == "true"):
+        return None
+    description = sensor.get("beschreibung")
+    if not isinstance(description, str) or is_return_sensor(description):
+        return None
+    humidity = ROOM_SENSOR_HUMIDITY.search(description) is not None
+    temperature = ROOM_SENSOR_TEMPERATURE.search(description) is not None
+    if humidity and not temperature:
+        return ROOM_SENSOR_KIND_HUMIDITY
+    if temperature and not humidity:
+        return ROOM_SENSOR_KIND_TEMPERATURE
+    return None
+
 def to_float(value: Any) -> Optional[float]:
     """Convert an API value to float, returning None for missing or non-numeric values."""
     if value is None or isinstance(value, bool):

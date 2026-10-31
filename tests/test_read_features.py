@@ -279,6 +279,102 @@ def test_hvac_action_unchanged_by_valve():
     assert entity._attr_hvac_action == ha_stubs.HVACAction.HEATING
 
 
+# S6-03: further room sensors
+def _sensor(description, name="26_8c_51_33_02_00_00_21", room_sensor=False, **extra):
+    return {"raumtemperatursensor": room_sensor, "name": name, "wert": 55.2,
+            "beschreibung": description, "letzte_uebertragung": "30.10.2026 15:10", **extra}
+
+
+def test_room_sensor_classification():
+    classify = helpers.classify_room_sensor
+    assert classify(_sensor("LuftFeuchte Sportzimmer")) == "humidity"
+    assert classify(_sensor("Humidity kitchen")) == "humidity"
+    assert classify(_sensor("Luftfeuchte Küche (ÄÖÜß)")) == "humidity"
+    assert classify(_sensor("Temperatur Wintergarten")) == "temperature"
+    assert classify(_sensor("Funk-Temp Büro")) == "temperature"
+    assert classify(_sensor("outdoor temperature")) == "temperature"
+    # Unknown or ambiguous descriptions are skipped, nothing is guessed
+    for description in ("Sensor 2 Room 10", "CO2 Bad", "", None, 5, "Temp/Feuchte Kombi"):
+        assert classify(_sensor(description)) is None, description
+
+
+def test_room_sensor_room_temperature_and_return_excluded():
+    classify = helpers.classify_room_sensor
+    assert classify(_sensor("RaumTemp Bad", room_sensor=True)) is None
+    assert classify(_sensor("RaumTemp Bad", room_sensor="true")) is None
+    for description in ("Rücklauf Bad", "Galerie RL", "Return temperature kitchen", "RL Feuchte"):
+        assert classify(_sensor(description)) is None, description
+    for name in (None, "", "  ", 7):
+        assert classify(_sensor("LuftFeuchte Bad", name=name)) is None, name
+    assert classify("not a sensor") is None
+
+
+def test_room_sensor_entities():
+    room = {"id": 4, "name": "Küche", "temperatur": 21.0, "sensoren": [
+        _sensor("RaumTemp Küche", name="28_01", room_sensor=True),
+        _sensor("Rücklauf Küche", name="28_02"),
+        _sensor("LuftFeuchte Küche", name="26_8c_51_33_02_00_00_21"),
+        _sensor("Funkthermometer Temp", name="VSensor*2", wert="19.5"),
+        _sensor("Sensor 9", name="28_09"),
+        _sensor("LuftFeuchte doppelt", name="26_8c_51_33_02_00_00_21"),
+    ]}
+    LOGS.messages.clear()
+    entities = by_unique_id(collect_entities([{"id": 2, "raeume": [room]}]))
+    room_sensors = {uid: entity for uid, entity in entities.items() if "_sensor_" in uid}
+    assert set(room_sensors) == {"1_2_4_sensor_26_8c_51_33_02_00_00_21", "1_2_4_sensor_VSensor*2"}
+    # Return sensor and room temperature keep their own entities
+    assert "1_2_4_return_28_02" in entities and "1_2_4_current" in entities
+    humidity = room_sensors["1_2_4_sensor_26_8c_51_33_02_00_00_21"]
+    assert humidity.entity_id == "sensor.controme_kuche_sensor_26_8c_51_33_02_00_00_21"
+    assert humidity.entity_description.translation_key == "room_sensor"
+    assert humidity.entity_description.device_class == "HUMIDITY"
+    assert humidity.entity_description.native_unit_of_measurement == "%"
+    assert humidity.entity_description.entity_registry_enabled_default is False
+    assert humidity._attr_translation_placeholders == {"sensor": "LuftFeuchte Küche"}
+    assert humidity._attr_native_value == 55.2
+    assert humidity.extra_state_attributes["sensor_id"] == "26_8c_51_33_02_00_00_21"
+    assert humidity.extra_state_attributes["last_transmission"] == "2026-10-30T15:10:00+01:00"
+    temperature = room_sensors["1_2_4_sensor_VSensor*2"]
+    assert temperature.entity_id == "sensor.controme_kuche_sensor_vsensor_2"
+    assert temperature.entity_description.device_class == "TEMPERATURE"
+    assert temperature.entity_description.native_unit_of_measurement == "CELSIUS"
+    assert temperature.entity_description.entity_registry_enabled_default is False
+    assert temperature._attr_native_value == 19.5
+    assert any("Sensor 9" in message for message in LOGS.messages)
+    assert any("LuftFeuchte doppelt" in message for message in LOGS.messages)
+
+
+def test_room_sensor_update_and_removal():
+    room = {"id": 4, "name": "Bad", "sensoren": [_sensor("LuftFeuchte Bad", name="26_01")]}
+    entity, coordinator = room_sensor_entity(room, "sensor_26_01")
+    assert entity.available and entity._attr_native_value == 55.2
+    new_room = {"id": 4, "name": "Bad", "sensoren": [
+        _sensor("LuftFeuchte Bad", name="26_01", wert="kein Sensor vorhanden",
+                letzte_uebertragung="31.10.2026 08:00")]}
+    coordinator.data = [{"id": 5, "raeume": [new_room]}]
+    entity._handle_coordinator_update()
+    assert not entity.available
+    assert entity.extra_state_attributes["last_transmission"] == "2026-10-31T08:00:00+01:00"
+    coordinator.data = [{"id": 5, "raeume": [{"id": 4, "name": "Bad", "sensoren": []}]}]
+    entity._handle_coordinator_update()
+    assert not entity.available
+
+
+def test_room_sensor_prefix_never_collides_with_return():
+    # The same Controme name as return and as further sensor gives different IDs
+    room = {"id": 4, "name": "Bad", "sensoren": [
+        _sensor("Rücklauf Bad", name="28_01"), _sensor("LuftFeuchte Bad", name="return_28_01"),
+        _sensor("Temperatur Bad", name="28_01x")]}
+    ids = entity_ids(collect_entities([{"id": 2, "raeume": [room]}]))
+    assert "1_2_4_return_28_01" in ids
+    assert "1_2_4_sensor_return_28_01" in ids
+    assert all(uid.startswith("1_2_4_") for uid in ids if "_sensor_" in uid)
+    # The snapshot keeps all 2.3.0 IDs; its only new room sensor is the humidity one
+    new = set(entity_ids(collect_entities(snapshot_data()))) - set(SNAPSHOT_230)
+    assert "1_1_10_sensor_28_00_00_00_00_00_00_03" in new
+    assert not any(uid.startswith("1_1_10_sensor_28_00_00_00_00_00_00_02") for uid in new)
+
+
 def run(namespace):
     failures = 0
     skipped = 0
