@@ -68,6 +68,9 @@ def check_scene_for_room(
     scene is currently applied there. Rooms switched off in a scene are not listed.
     Allowed is only a scene with exactly one listed room whose "Etage / Raum" label
     matches the target room, and that label must be unique among all rooms.
+
+    Controme ignores room_id for scenes and applies them to every listed room,
+    so this check is the only protection of other rooms: never relax it.
     """
     if not isinstance(scenes, list):
         return "scene_list_unavailable", {}

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.3.0 (2026-10-31)
 
 ### New Features
 - **Scenes** (#4): New service `controme.activate_scene` on the Controme climate entities (scene ID, optional approximate duration 1-1440 minutes). For safety only scenes that contain exactly the room of the selected entity are activated: the scene list is read first, the listed room is matched by its name "Floor / Room", and scenes for several rooms (e.g. "*"), unknown scenes, other rooms or ambiguous room names are refused with a translated error before anything is sent. The request always contains the room ID, but Controme applies a scene to all rooms it lists regardless of the room ID, so the protection of other rooms relies only on this check; if Controme reports that other rooms were affected, an error and a warning with the room names follow. There are no scene entities.
