@@ -103,6 +103,27 @@ data:
   duration: 60
 ```
 
+### `controme.activate_scene`
+Activates a Controme temperature scene for the room of the selected climate entity. For safety, only scenes that contain **exactly this one room** are activated:
+- `scene_id` (required): ID of the scene in Controme (1 or higher)
+- `duration` (optional): approximate duration in minutes, 1-1440. Without a duration the scene stays active until the next switch.
+
+How it works:
+- Before anything is sent, the scene list of Controme is read. A scene contains all rooms it lists (rooms switched off in the scene in Controme are not listed); whether the scene is currently active in a room does not matter.
+- The listed room is matched by its name "Floor / Room" (compared case-insensitively, also with umlauts). The scene is only sent if it lists exactly one room, this room is the room of the selected entity and its name is unique in Controme.
+- Scenes for several rooms, for example the default scene "*", are refused on purpose, as are unknown scene IDs and other rooms. In these cases nothing is sent and a translated error is shown.
+- The request always contains the room ID, but the live test showed that Controme applies a scene to all rooms it lists, regardless of the room ID. The protection of the other rooms therefore relies only on the check above. If Controme reports that the scene was applied to other rooms as well, an error with these room names is shown and a warning is logged.
+- To use a scene for one room, create a scene in Controme that contains only this room. Selecting several climate entities means one check and one request per room.
+
+```yaml
+action: controme.activate_scene
+target:
+  entity_id: climate.controme_living_room
+data:
+  scene_id: 2
+  duration: 60
+```
+
 ## Supported Languages
 - English
 - German (Deutsch)
@@ -114,7 +135,7 @@ data:
 ## Known Limitations
 - Several Controme systems with the same haus_id are not supported. The IDs of devices and entities are built from haus_id, floor and room, so a second system with the same haus_id would collide with the first one. The haus_id (usually 1, sometimes 2) is entered during setup.
 - The HVAC mode (Controme operation mode) cannot be switched from Home Assistant. The firmware tested rejects the documented API call for it (HTTP 400).
-- Controme scenes are not supported. In a test, Controme did not reliably apply a scene to a single room only, and a scene for all rooms is too risky.
+- Controme scenes can only be activated if they contain exactly one room (see `controme.activate_scene`). Scenes for several rooms or all rooms are refused, there are no scene entities.
 - The duration of a temporary temperature is only approximate, and the API reports no status of the temporary mode. There is no separate service to cancel it; setting the temperature normally ends it.
 - Floors without rooms and rooms without their own ID are shown, but neither a target temperature nor a temporary temperature can be set for them.
 - The transmission monitoring entities use the haus_id in their IDs as well (e.g. `1_transmission_problem`), so they are affected by the same haus_id limitation.

@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import socket
+import unicodedata
 import aiohttp
 from ipaddress import IPv4Network, IPv4Interface
 from homeassistant.util import dt as dt_util
@@ -39,6 +40,71 @@ def find_room(data: Optional[List[Dict[str, Any]]], floor_id: Any, room_id: Any)
     for current_floor_id, current_room_id, room in iter_rooms(data):
         if current_floor_id == floor_id and current_room_id == room_id:
             return room
+    return None
+
+def normalize_label(value: Any) -> str:
+    """Normalize an "Etage / Raum" label for comparison (NFC, single spaces, casefold)."""
+    return " ".join(unicodedata.normalize("NFC", str(value)).split()).casefold()
+
+def room_labels(data: Optional[List[Dict[str, Any]]]) -> List[tuple]:
+    """Return (floor_id, room_id, "Etage / Raum") for all rooms, like the scene list names them."""
+    labels = []
+    for floor in data or []:
+        if not isinstance(floor, dict):
+            continue
+        rooms = floor.get("raeume")
+        for room in rooms if isinstance(rooms, list) else []:
+            if isinstance(room, dict) and room.get("name") is not None:
+                labels.append((floor.get("id"), room.get("id"),
+                               f"{floor.get('etagenname', '')} / {room.get('name')}"))
+    return labels
+
+def check_scene_for_room(
+    scenes: Any, scene_id: int, target_label: str, all_labels: List[str]
+) -> Optional[tuple]:
+    """Check that a scene contains exactly the target room; return None or (error key, placeholders).
+
+    Every room listed in the scene belongs to it, "active" only tells whether the
+    scene is currently applied there. Rooms switched off in a scene are not listed.
+    Allowed is only a scene with exactly one listed room whose "Etage / Raum" label
+    matches the target room, and that label must be unique among all rooms.
+
+    Controme ignores room_id for scenes and applies them to every listed room,
+    so this check is the only protection of other rooms: never relax it.
+    """
+    if not isinstance(scenes, list):
+        return "scene_list_unavailable", {}
+    matches = []
+    for scene in scenes:
+        if not isinstance(scene, dict) or isinstance(scene.get("id"), bool):
+            continue
+        try:
+            if int(scene.get("id")) == scene_id:
+                matches.append(scene)
+        except (TypeError, ValueError):
+            continue
+    if not matches:
+        return "unknown_scene", {"scene_id": str(scene_id)}
+    if len(matches) > 1:
+        return "scene_list_unavailable", {}
+    scene = matches[0]
+    rooms = scene.get("raeume")
+    if not isinstance(rooms, list) or not all(
+        isinstance(room, dict) and isinstance(room.get("name"), str) for room in rooms
+    ):
+        return "scene_list_unavailable", {}
+    scene_name = str(scene.get("Name") or scene.get("name") or scene_id)
+    names = [room["name"] for room in rooms]
+    placeholders = {
+        "scene_id": str(scene_id),
+        "scene": scene_name,
+        "rooms": ", ".join(names) or "-",
+    }
+    target = normalize_label(target_label)
+    if len(names) != 1 or normalize_label(names[0]) != target:
+        return "scene_not_single_room", placeholders
+    if [normalize_label(label) for label in all_labels].count(target) != 1:
+        return "scene_room_ambiguous", {"room": target_label}
     return None
 
 def is_synthetic_room(data: Optional[List[Dict[str, Any]]], room: Dict[str, Any]) -> bool:

@@ -1,4 +1,5 @@
 """Support for Controme climate devices."""
+import json
 import logging
 from typing import Any
 
@@ -13,20 +14,28 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import service
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
-from .api import async_post, room_write_url
+from .api import (
+    async_get_json,
+    async_post,
+    room_write_url,
+    scene_write_url,
+    scenes_read_url,
+)
 from .coordinator import ContromeConfigEntry
 from .helpers import (
+    check_scene_for_room,
     find_room,
     is_synthetic_room,
     iter_rooms,
     parse_mode_end,
+    room_labels,
     to_float,
 )
 from .const import (
@@ -279,13 +288,81 @@ class ContromeClimate(CoordinatorEntity, ClimateEntity):
         # an immediate refresh would jump back to the old value
         self._attr_target_temperature = temperature
         self.async_write_ha_state()
+        self._schedule_delayed_refresh()
+
+    async def async_activate_scene(self, scene_id: int, duration: int | None = None) -> None:
+        """Activate a Controme scene for this room (service controme.activate_scene).
+
+        Only scenes that list exactly this room are sent, with room_id of this
+        room; without a duration the scene stays active until the next switch.
+        """
+        self._check_entry_loaded()
+        self._check_real_room()
+
+        scenes = await async_get_json(self.hass, scenes_read_url(self._base_url, self._house_id))
+        labels = room_labels(self.coordinator.data)
+        target_label = next(
+            (label for floor_id, room_id, label in labels
+             if floor_id == self._floor_id and room_id == self._room_id),
+            "",
+        )
+        problem = check_scene_for_room(scenes, scene_id, target_label, [label for _f, _r, label in labels])
+        if problem is not None:
+            key, placeholders = problem
+            _LOGGER.debug("Scene %s not sent for room %s: %s", scene_id, self._room_id, key)
+            # An unreadable scene list is a Controme problem, not a wrong user input
+            if key == "scene_list_unavailable":
+                raise HomeAssistantError(translation_domain=DOMAIN, translation_key=key)
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key=key,
+                translation_placeholders=placeholders,
+            )
+
+        scene_data = {"room_id": str(self._room_id)}
+        if duration is not None:
+            scene_data["duration"] = str(duration)
+        response_text = await self._async_write(
+            scene_write_url(self._base_url, self._house_id, scene_id), scene_data
+        )
+        self._schedule_delayed_refresh()
+        self._check_scene_roomlist(scene_id, response_text, labels)
+
+    def _check_scene_roomlist(self, scene_id: int, response_text: str, labels: list) -> None:
+        """Raise if the scene response lists other rooms than this one.
+
+        Controme answers with {"roomlist": {"<room id>": <temperature>, ...}, "time": ...};
+        a missing or unreadable roomlist is only logged.
+        """
+        try:
+            roomlist = json.loads(response_text).get("roomlist")
+        except (ValueError, AttributeError):
+            roomlist = None
+        if not isinstance(roomlist, dict):
+            _LOGGER.debug("Scene %s: no readable roomlist in the response", scene_id)
+            return
+        other_ids = [room_id for room_id in roomlist if str(room_id) != str(self._room_id)]
+        if not other_ids:
+            return
+        names = {str(room_id): label for _floor_id, room_id, label in labels}
+        other_rooms = ", ".join(names.get(str(room_id), f"Room {room_id}") for room_id in other_ids)
+        _LOGGER.warning("Controme scene %s was applied to other rooms than %s: %s",
+                        scene_id, self._room_id, other_rooms)
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="scene_applied_to_other_rooms",
+            translation_placeholders={"scene_id": str(scene_id), "rooms": other_rooms},
+        )
+
+    def _schedule_delayed_refresh(self) -> None:
+        """Refresh the coordinator after DELAYED_REFRESH_SECONDS, replacing a pending refresh."""
         self._cancel_delayed_refresh()
         self._unsub_delayed_refresh = async_call_later(
             self.hass, DELAYED_REFRESH_SECONDS, self._async_delayed_refresh
         )
 
     async def _async_delayed_refresh(self, _now) -> None:
-        """Refresh the coordinator data after a temporary temperature was set."""
+        """Refresh the coordinator data after a write."""
         self._unsub_delayed_refresh = None
         await self.coordinator.async_request_refresh()
 
